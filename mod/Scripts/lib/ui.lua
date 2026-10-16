@@ -92,6 +92,40 @@ function UI.loc(id)
     return safe(function() return lib:GetLocalizeText(id):ToString() end) or ""
 end
 
+-- text of a hook argument (FText, FString, text id); nil for anything else
+function UI.arg_text(p)
+    local v = safe(function() return p:get() end)
+    if type(v) == "string" then
+    elseif type(v) == "userdata" then v = safe(function() return v:ToString() end)
+    else return nil end
+    if type(v) ~= "string" or v == "" then return nil end
+    if v:find("^TEXT_") then v = UI.loc(v) end
+    return UI.clean(v)
+end
+
+-- all string/text fields of a data object or struct (text ids localised),
+-- for list items and infos that keep their label as data
+function UI.fields_text(obj, cls)
+    local parts, seen = {}, {}
+    cls = cls or safe(function() return obj:GetClass() end)
+    if not cls then return "" end
+    safe(function()
+        cls:ForEachProperty(function(p)
+            local kind = p:GetClass():GetFName():ToString()
+            if kind == "StrProperty" or kind == "TextProperty" or kind == "NameProperty" then
+                local n = p:GetFName():ToString()
+                local s = safe(function() return obj[n]:ToString() end)
+                if s and s ~= "" then
+                    if s:find("^TEXT_") then s = UI.loc(s) end
+                    s = UI.clean(s)
+                    if s and not seen[s] then seen[s] = true; parts[#parts + 1] = s end
+                end
+            end
+        end)
+    end)
+    return table.concat(parts, ", ")
+end
+
 -- a user widget is on screen
 function UI.shown(w)
     return UI.valid(w) and safe(function() return w:IsInViewport() and w:IsVisible() end) == true

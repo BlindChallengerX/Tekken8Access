@@ -6,6 +6,7 @@
  *   X               stop speech
  *   F<tab>numbers   fight frame for the beacon (see beacon.c)
  *   F0              fight over: beacon silent
+ *   BL<tab>numbers  Tekken Ball: screen depth height dist (beacon.c)   BL0 stop
  *   T<tab>name      UI sound (edge, ...)
  *   C<tab>key<tab>v config value
  *   L<tab>text      write text to the log
@@ -74,6 +75,12 @@ static void handle(char *line) {
         while (*p && k < 16) { char *e; v[k] = strtof(p, &e); if (e == p) break; k++; p = e; while (*p == '\t' || *p == ' ') p++; }
         beacon_frame(v, k);
     } else if (!strcmp(line, "F0")) beacon_off();
+    else if (!strcmp(line, "BL")) {
+        float v[8]; int k = 0;
+        char *p = arg;
+        while (*p && k < 8) { char *e; v[k] = strtof(p, &e); if (e == p) break; k++; p = e; while (*p == '\t' || *p == ' ') p++; }
+        ball_frame(v, k);
+    } else if (!strcmp(line, "BL0")) ball_off();
     else if (!strcmp(line, "T")) ui_sound(arg);
     else if (!strcmp(line, "C")) {
         char *v = strchr(arg, '\t');

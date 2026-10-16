@@ -6,7 +6,7 @@
   key press and speech. Menus are read from the game's own Blueprint events
   (menus.lua); the fight beacon reads fighter positions (fight.lua).
 
-  Keys: F5 fight status, F6 beacon on/off, F7 repeat move with notes,
+  Keys: F3 subtitles on/off, F4 Tekken Ball sound on/off, F5 fight status, F6 beacon on/off, F7 repeat move with notes,
         F8 repeat last speech, F9 read screen, F11 speech on/off.
 ]]
 local MOD_DIR = (package.path or ""):match("([^;]*[\\/]Mods[\\/]TekkenA11y)[\\/]Scripts")
@@ -15,6 +15,7 @@ local Out   = require("out")
 local UI    = require("lib/ui")
 local Menus = require("menus")
 local Fight = require("fight")
+local Watch = require("watch")
 
 print("[A11y] TekkenA11y 0.7.0 loading\n")
 
@@ -50,6 +51,8 @@ end
 
 bind("F5", Fight.status)
 bind("F6", Fight.toggle_beacon)
+bind("F4", Fight.toggle_ball)
+bind("F3", Menus.toggle_subtitles)
 bind("F7", Menus.repeat_move)
 bind("F8", function() Out.send("S1\t" .. (Out.last ~= "" and Out.last or "Nothing yet.")) end)
 bind("F9", read_screen)
@@ -91,6 +94,10 @@ LoopAsync(40, function()
     fight_busy = true
     ExecuteInGameThread(function()
         Menus.run_deferred()
+        if not Fight.active() then
+            local okw, errw = pcall(Watch.tick)
+            if not okw then Out.log("watch: " .. tostring(errw)) end
+        end
         local ok, err = pcall(Fight.tick)
         if not ok then Out.log("fight: " .. tostring(err)) end
         fight_busy = false

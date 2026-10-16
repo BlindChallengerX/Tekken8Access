@@ -26,6 +26,7 @@ static int s_have;
 static int s_on = 1;
 static float s_vol = 1.0f;
 static float s_near = 80, s_far = 700;    /* cm: fastest / slowest ping */
+static int s_ball_on = 1;
 
 static void init(void) { if (!s_init) { InitializeCriticalSection(&s_lock); s_init = 1; } }
 
@@ -34,6 +35,7 @@ void beacon_config(const char *key, float v) {
     EnterCriticalSection(&s_lock);
     if (!strcmp(key, "beacon")) s_on = v != 0;
     else if (!strcmp(key, "beacon_vol")) s_vol = v;
+    else if (!strcmp(key, "ball")) s_ball_on = v != 0;
     else if (!strcmp(key, "master")) g_master = v;
     LeaveCriticalSection(&s_lock);
 }
@@ -74,9 +76,52 @@ void beacon_off(void) {
     LeaveCriticalSection(&s_lock);
 }
 
+/*
+ * Tekken Ball: a short dry "tock" (triangle, so it is not mistaken for the
+ * opponent's soft two-note ping). Pan = the ball's side of the screen,
+ * pitch = its height above the floor in whole-tone steps (low = on the
+ * ground, high = up in the air), ticks come faster as it gets closer.
+ * The mod sends "BL screen depth height dist" about every 40 ms; "BL0" stops it.
+ */
+static DWORD s_ball_frame, s_ball_next;
+static float s_ball_pan, s_ball_h, s_ball_d;
+static int s_ball_have;
+
+void ball_frame(const float *v, int n) {
+    if (n < 4) return;
+    init();
+    float screen = v[0], depth = v[1], h = v[2], d = v[3];
+    float len = sqrtf(screen * screen + depth * depth);
+    EnterCriticalSection(&s_lock);
+    s_ball_frame = GetTickCount();
+    s_ball_pan = len > 10 ? 0.85f * screen / len : 0;
+    s_ball_h = h; s_ball_d = d;
+    s_ball_have = 1;
+    LeaveCriticalSection(&s_lock);
+}
+
+void ball_off(void) { init(); EnterCriticalSection(&s_lock); s_ball_have = 0; LeaveCriticalSection(&s_lock); }
+
+static void ball_tick(DWORD now) {
+    EnterCriticalSection(&s_lock);
+    int live = s_ball_have && s_ball_on && now - s_ball_frame < 300;
+    float pan = s_ball_pan, h = s_ball_h, d = s_ball_d, vol = s_vol;
+    LeaveCriticalSection(&s_lock);
+    if (!live || now < s_ball_next) return;
+    /* height 0..350 cm -> 0..9 whole tones above 330 Hz */
+    int step = (int)(h / 40.0f + 0.5f);
+    if (step < 0) step = 0; if (step > 9) step = 9;
+    float f = 330 * powf(2, step * 2 / 12.0f);
+    float k = (600 - d) / 520;              /* 1 at 80 cm, 0 at 6 m */
+    if (k < 0) k = 0; if (k > 1) k = 1;
+    tone(f, f * 0.94f, 0.035f, (0.10f + 0.08f * k) * vol, pan, W_TRI);
+    s_ball_next = now + (DWORD)(90 + 360 * (1 - k));
+}
+
 void beacon_tick(void) {
     init();
     DWORD now = GetTickCount();
+    ball_tick(now);
     EnterCriticalSection(&s_lock);
     int live = s_have && s_on && now - s_last_frame < 300;
     float dist = s_dist, pan = s_pan, vol = s_vol; int level = s_level;

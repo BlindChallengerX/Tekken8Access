@@ -30,3 +30,5 @@ void beacon_frame(const float *v, int n);
 void beacon_off(void);
 void beacon_tick(void);
 void beacon_config(const char *key, float value);
+void ball_frame(const float *v, int n);
+void ball_off(void);

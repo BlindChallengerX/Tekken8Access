@@ -318,6 +318,51 @@ local function on_dialog(ctx)
     if btn and btn ~= t then Out.queue(btn) end
 end
 
+-- ---------------------------------------------------------------- text events
+-- Functions that receive the text to show (subtitles, Arcade Quest talk and
+-- tutorial captions, Tekken Ball info): speak their text arguments. The
+-- arguments are also logged, to finish mapping screens not tested yet.
+Menus.subtitles = true
+local args_last, args_t = "", -1
+local function speak_args(label, interrupt)
+    return function(ctx, ...)
+        local parts, raw = {}, {}
+        for _, p in ipairs({ ... }) do
+            local t = UI.arg_text(p)
+            if t then parts[#parts + 1] = t end
+            raw[#raw + 1] = tostring(safe(function() local v = p:get(); return type(v) == "userdata" and (safe(function() return v:ToString() end) or "obj") or v end))
+        end
+        Out.log(label .. "(" .. table.concat(raw, ", ") .. ")")
+        if #parts == 0 then return end
+        local t = table.concat(parts, ". ")
+        if t == args_last and os.clock() - args_t < 1 then return end
+        args_last, args_t = t, os.clock()
+        if label == "subtitle" and not Menus.subtitles then return end
+        touched()
+        if interrupt then Out.say(t, true) else Out.queue(t) end
+    end
+end
+
+-- a subtitle widget that got no text argument: read what it shows a tick later
+local sub_last = ""
+local function on_subtitle(ctx, ...)
+    local had = false
+    for _, p in ipairs({ ... }) do if UI.arg_text(p) then had = true end end
+    speak_args("subtitle", true)(ctx, ...)
+    if had then return end
+    local w = self_of(ctx)
+    Menus.defer(function()
+        if not UI.valid(w) or not Menus.subtitles then return end
+        local t = UI.read(w)
+        if t ~= "" and t ~= sub_last then sub_last = t; Out.say(t, true) end
+    end, 0.05)
+end
+
+function Menus.toggle_subtitles()
+    Menus.subtitles = not Menus.subtitles
+    Out.say(Menus.subtitles and "Subtitles on" or "Subtitles off", true)
+end
+
 -- ---------------------------------------------------------------- hook table
 local CS = "/Game/UI/Widget/CharSelect/WBP_UI_CharSelect.WBP_UI_CharSelect_C:"
 local SS = "/Game/UI/Widget/StageSelect/WBP_UI_StageSelect.WBP_UI_StageSelect_C:"
@@ -336,6 +381,9 @@ local SPECS = {
     { MM .. "WBP_UI_MainMenu_Menu_List.WBP_UI_MainMenu_Menu_List_C:play_hover", function(ctx) Menus.side = nil; generic_hover(ctx) end },
     -- in-match pause menu (arcade, versus, story...)
     { "/Game/UI/Widget/Pause/WBP_UI_Pause_MenuButton.WBP_UI_Pause_MenuButton_C:Select", generic_hover },
+    -- story / cutscene subtitles
+    { "/Game/UI/Widget/Subtitle/WBP_UI_Subtitle.WBP_UI_Subtitle_C:CreateFrontSubtitle", on_subtitle },
+    { "/Game/UI/Widget/Subtitle/WBP_UI_Subtitle.WBP_UI_Subtitle_C:CreateBackSubtitle", on_subtitle },
     -- dialog buttons (Yes / No / OK); the LR variant inherits Select
     { "/Game/UI/Widget/Dialog/WBP_UI_Dialog_TextButton.WBP_UI_Dialog_TextButton_C:Select", generic_hover },
     { "/Game/UI/Widget/Elements/WBP_UI_InformationBar.WBP_UI_InformationBar_C:OnSetMessage", function(ctx) local w = self_of(ctx); if w then info_bar(w) end end },
@@ -351,6 +399,12 @@ local DYN = {
 local HOVER_FUNCS = { play_hover = true, PlayAnimHover = true, PlayHover = true, OnHover = true,
                       PlayAnimSelect = true, PlayAnimFocus = true, play_focus = true }
 local DIALOG_FUNCS = { PlayAnimIn = true, OpenDialog = true, Open = true }
+-- functions handed the text they display (Arcade Quest talk, tutorial
+-- captions, Tekken Ball select info): speak the arguments
+local TEXT_FUNCS = { OnSetTextId = true, OnSetTelopTextId = true, OnSetTitleTextId = true,
+                     OnSetInfoUMG = true }
+-- cursor events with number arguments: logged for now, to map them
+local LOG_FUNCS = { OnCursorMoveUMG = true, CallSelectSlotCallback = true }
 
 local registered = {}     -- path -> true once hooked
 local pending = {}        -- path -> fn
@@ -401,7 +455,9 @@ function Menus.scan_classes()
                         local p = path .. ":" .. fn
                         if not dyn and not registered[p] then
                             if (HOVER_FUNCS[fn] or (fn == "Select" and short:find("Button"))) and not (short == "WBP_UI_MainMenu_Menu_List_C") then pending[p] = generic_hover
-                            elseif is_dialog and DIALOG_FUNCS[fn] then pending[p] = on_dialog end
+                            elseif is_dialog and DIALOG_FUNCS[fn] then pending[p] = on_dialog
+                            elseif TEXT_FUNCS[fn] then pending[p] = speak_args(short .. ":" .. fn, true)
+                            elseif LOG_FUNCS[fn] then pending[p] = speak_args(short .. ":" .. fn, false) end
                         end
                     end)
                 end)
@@ -421,6 +477,7 @@ local PRELOAD = {
     "/Game/UI/Widget/Practice/WBP_UI_CommandList",
     "/Game/UI/Widget/Pause/WBP_UI_Pause_MenuButton",
     "/Game/UI/Widget/Dialog/WBP_UI_Dialog_TextButton",
+    "/Game/UI/Widget/Subtitle/WBP_UI_Subtitle",
 }
 local preloaded = false
 function Menus.preload()

@@ -95,6 +95,41 @@ local function health()
     end
 end
 
+-- Tekken Ball: the ball in play is a visible PolarisBallActor
+local ball, next_ball, ball_sent = nil, 0, false
+Fight.ball_cue = true
+Fight.ball_info = nil       -- last { d = cm, h = cm, side = "left"/"right" } for F5
+
+local function find_ball()
+    ball = nil
+    local arr = FindAllOf("PolarisBallActor")
+    if type(arr) ~= "table" then return end
+    for _, x in ipairs(arr) do
+        if UI.valid(x) and safe(function() return x.IsVisibleActor end) then ball = x; return end
+    end
+end
+
+-- floor height is about 100 cm below a standing fighter's actor origin
+local function ball_frame(a, c, s)
+    local t = os.clock()
+    if t >= next_ball then
+        next_ball = t + 1.0
+        if not (UI.valid(ball) and safe(function() return ball.IsVisibleActor end)) then find_ball() end
+    end
+    local l = ball and safe(function() return ball:K2_GetActorLocation() end)
+    if not l or not Fight.ball_cue then
+        if ball_sent then ball_sent = false; Out.send("BL0") end
+        Fight.ball_info = nil
+        return
+    end
+    local dx, dy = l.X - a.X, l.Y - a.Y
+    local screen, depth = dx * -s + dy * c, dx * c + dy * s
+    local h, d = l.Z - (a.Z - 100), math.sqrt(dx * dx + dy * dy)
+    Fight.ball_info = { d = d, h = h, side = screen < 0 and "left" or "right" }
+    ball_sent = true
+    Out.send(string.format("BL\t%.1f\t%.1f\t%.1f\t%.1f", screen, depth, h, d))
+end
+
 local function frame()
     local me, op = f[Fight.me], f[1 - Fight.me]
     local a = safe(function() return me:K2_GetActorLocation() end)
@@ -103,14 +138,20 @@ local function frame()
     if not UI.valid(pc) then pc = FindFirstOf("PlayerController") end
     local yaw = safe(function() return pc.PlayerCameraManager:GetCameraRotation().Yaw end) or 0
     local r = math.rad(yaw)
-    Out.send(string.format("F\t%.1f\t%.1f\t%.1f\t%.1f\t%.4f\t%.4f", a.X, a.Y, b.X, b.Y, math.cos(r), math.sin(r)))
+    local c, s = math.cos(r), math.sin(r)
+    if Fight.beacon then
+        Out.send(string.format("F\t%.1f\t%.1f\t%.1f\t%.1f\t%.4f\t%.4f", a.X, a.Y, b.X, b.Y, c, s))
+    else
+        Out.send("F0")
+    end
+    ball_frame(a, c, s)
 end
 
 -- game thread
 function Fight.tick()
     local t = os.clock()
     if not ok_fighters() then
-        if active then active = false; Out.send("F0") end
+        if active then active = false; Out.send("F0"); Out.send("BL0") end
         if t < next_find then return end
         next_find = t + 1.0
         find_fighters()
@@ -120,7 +161,7 @@ function Fight.tick()
         next_menu_check = t + 0.3
         menu_open = any_menu()
         if not hud_up() then
-            if active then active = false; Out.send("F0") end
+            if active then active = false; Out.send("F0"); Out.send("BL0") end
             return
         end
     elseif not active then
@@ -128,7 +169,7 @@ function Fight.tick()
     end
     if not active then active = true; start() end
     if t >= next_hp then next_hp = t + 0.2; health() end
-    if menu_open or not Fight.beacon then Out.send("F0") return end
+    if menu_open then Out.send("F0"); Out.send("BL0"); ball_sent = false return end
     frame()
 end
 
@@ -142,13 +183,24 @@ function Fight.status()
     local b = safe(function() return f[1]:K2_GetActorLocation() end)
     local d = a and b and math.sqrt((a.X - b.X) ^ 2 + (a.Y - b.Y) ^ 2) / 100 or 0
     local me, op = Fight.me, 1 - Fight.me
-    Out.say(string.format("%s %d percent, %s %d percent. Distance %.1f meters.",
-        name(me), math.floor((hp[me] or 100) + 0.5), name(op), math.floor((hp[op] or 100) + 0.5), d), true)
+    local text = string.format("%s %d percent, %s %d percent. Distance %.1f meters.",
+        name(me), math.floor((hp[me] or 100) + 0.5), name(op), math.floor((hp[op] or 100) + 0.5), d)
+    local bi = Fight.ball_info
+    if bi then
+        text = text .. string.format(" Ball %.1f meters to your %s, %s.", bi.d / 100, bi.side,
+            bi.h < 60 and "low" or bi.h < 180 and "chest high" or "high")
+    end
+    Out.say(text, true)
 end
 
 function Fight.toggle_beacon()
     Fight.beacon = not Fight.beacon
     Out.say(Fight.beacon and "Opponent beacon on" or "Opponent beacon off", true)
+end
+
+function Fight.toggle_ball()
+    Fight.ball_cue = not Fight.ball_cue
+    Out.say(Fight.ball_cue and "Ball sound on" or "Ball sound off", true)
 end
 
 return Fight

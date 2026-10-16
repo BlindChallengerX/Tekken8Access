@@ -1,4 +1,4 @@
-TekkenA11y 0.7.0 - screen reader and audio cues for Tekken 8
+﻿TekkenA11y 0.7.0 - screen reader and audio cues for Tekken 8
 =============================================================
 
 Speech goes through Prism (NVDA, JAWS and others, or the Windows voice if no
@@ -21,6 +21,10 @@ What is read
 - Practice pause menu (B on the keyboard): every column, sub-option and value
   list, then the help line.
 - Pause menu in other modes, Yes/No dialogs, most other menu rows.
+- Jukebox: the album carousel (series, All, My Playlists; "selected" marks
+  the one playing), series tabs, track and stage music lists, preset options.
+- Story and cutscene subtitles are read as they appear (F3 turns them off).
+- Arcade Quest talk and tutorial captions, Tekken Ball ball and damage info.
 - Move list and sample combos: number, move name and the command in Tekken
   notation (d/f+1, hold f, 1+2 ...), then notes and damage when you rest.
   "then" marks the next part of a string or combo.
@@ -35,10 +39,16 @@ Fights
   to the side. The beeps are panned to their side and come faster as they
   get closer.
 - The beacon pauses while a pause or practice menu is open.
+- Tekken Ball: a short dry tock for the ball. Panned to its side, higher
+  when the ball is higher in the air (whole steps from the floor up to
+  about 3.5 meters), ticking faster as it gets closer. F5 also says how far
+  the ball is, which side, and whether it is low, chest high or high.
 
 Keys
 ----
-F5   distance and health
+F3   subtitles on / off
+F4   Tekken Ball sound on / off
+F5   distance and health (and the ball in Tekken Ball)
 F6   opponent beacon on / off
 F7   repeat the selected move with its notes
 F8   repeat the last thing said
