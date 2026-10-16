@@ -24,7 +24,7 @@ local function arg(p) return safe(function() return p:get() end) end
 
 Menus.last_menu_t = -10          -- last time a menu event fired (fight module mutes the beacon)
 
--- Work to do on the next game-thread tick (main.lua runs it every 40 ms).
+-- Work to do on the next game-thread tick (main.lua frame(), every ~35 ms).
 -- Calling ExecuteInGameThread from inside a hook callback hung the Lua side.
 local deferred = {}
 function Menus.defer(fn, delay) deferred[#deferred + 1] = { fn = fn, at = os.clock() + (delay or 0) } end
@@ -301,14 +301,16 @@ end
 
 -- ---------------------------------------------------------------- dialogs
 -- a dialog is drawn by two widgets (frame + menu); the second repeats the
--- question, so skip text already inside the line just spoken
+-- question, so skip text already inside the line just spoken. Some dialogs
+-- (controller assignment) replay their open animation every second: while
+-- the same text keeps firing, it is not repeated.
 local dialog_last, dialog_t = "", -1
 local function on_dialog(ctx)
     local w = self_of(ctx)
     if not w then return end
     local t = UI.read(w)
     if t == "" then return end
-    if os.clock() - dialog_t < 1 and dialog_last:find(t, 1, true) then return end
+    if os.clock() - dialog_t < 1.5 and dialog_last:find(t, 1, true) then dialog_t = os.clock() return end
     dialog_last, dialog_t = t, os.clock()
     touched()
     -- the default button is selected just before the dialog animates in:
@@ -319,10 +321,10 @@ local function on_dialog(ctx)
 end
 
 -- ---------------------------------------------------------------- text events
--- Functions that receive the text to show (subtitles, Arcade Quest talk and
+-- Functions that receive the text to show (Arcade Quest talk and
 -- tutorial captions, Tekken Ball info): speak their text arguments. The
 -- arguments are also logged, to finish mapping screens not tested yet.
-Menus.subtitles = true
+Menus.subtitles = true           -- read by watch.lua (F3)
 local args_last, args_t = "", -1
 local function speak_args(label, interrupt)
     return function(ctx, ...)
@@ -337,30 +339,81 @@ local function speak_args(label, interrupt)
         local t = table.concat(parts, ". ")
         if t == args_last and os.clock() - args_t < 1 then return end
         args_last, args_t = t, os.clock()
-        if label == "subtitle" and not Menus.subtitles then return end
         touched()
         if interrupt then Out.say(t, true) else Out.queue(t) end
     end
 end
 
--- a subtitle widget that got no text argument: read what it shows a tick later
-local sub_last = ""
-local function on_subtitle(ctx, ...)
-    local had = false
-    for _, p in ipairs({ ... }) do if UI.arg_text(p) then had = true end end
-    speak_args("subtitle", true)(ctx, ...)
-    if had then return end
-    local w = self_of(ctx)
-    Menus.defer(function()
-        if not UI.valid(w) or not Menus.subtitles then return end
-        local t = UI.read(w)
-        if t ~= "" and t ~= sub_last then sub_last = t; Out.say(t, true) end
-    end, 0.05)
-end
-
 function Menus.toggle_subtitles()
     Menus.subtitles = not Menus.subtitles
     Out.say(Menus.subtitles and "Subtitles on" or "Subtitles off", true)
+end
+
+-- ---------------------------------------------------------------- Tekken Ball select
+-- Ball select: WBP_UI_TB_BallSlot_C:OnCursorMoveUMG(count, index, ...); the
+-- names are on WBP_UI_TB_BallSlot_Panel_C (SlotNum, side, IsLocked,
+-- TB_name_1P / _2P). The description comes in OnSetInfoUMG(text).
+local function ball_slot_cursor(ctx, count, index)
+    local w = self_of(ctx)
+    local i = arg(index)
+    if not w or type(i) ~= "number" then return end
+    local side = safe(function() return w.side end) or 0
+    touched()
+    Menus.defer(function()
+        for _, p in ipairs(FindAllOf("WBP_UI_TB_BallSlot_Panel_C") or {}) do
+            if UI.valid(p) and safe(function() return p.SlotNum == i and p.side == side and p:IsVisible() end) then
+                local nm = UI.clean(UI.text_of(safe(function() return p["TB_name_" .. (side + 1) .. "P"] end)) or "")
+                if nm and not nm:find("^Preset") then
+                    if safe(function() return p.IsLocked end) then nm = nm .. ", locked" end
+                    Out.say(nm)
+                    if Menus.ball_info then Out.help(Menus.ball_info) end
+                    return
+                end
+            end
+        end
+    end)
+end
+
+-- arrives in the same frame as the cursor event, before the name is read:
+-- kept and given to the help line after the name
+local function ball_slot_info(ctx, text)
+    Menus.ball_info = UI.arg_text(text)
+end
+
+-- Ball damage: WBP_UI_TB_DamageSet_C:OnCursorMoveUMG(level, ...); the value is
+-- shown in WBP_UI_TB_DamageSet_Window_C (side, TB_num)
+local damage_first = true
+local function damage_cursor(ctx)
+    touched()
+    Menus.defer(function()
+        local side = Menus.side or 0
+        for _, win in ipairs(FindAllOf("WBP_UI_TB_DamageSet_Window_C") or {}) do
+            if UI.valid(win) and safe(function() return win.side == side and win:IsVisible() end) then
+                local n = UI.text_of(safe(function() return win.TB_num end))
+                if n then
+                    Out.say((damage_first and "Ball damage, " or "") .. n .. " percent")
+                    damage_first = false
+                end
+                return
+            end
+        end
+    end)
+end
+
+-- ---------------------------------------------------------------- story chapters
+-- WBP_UI_Story_ChapterSelect_C:SetChapterTitleText fills TB_ChapterName_Main
+-- ("Chapter 1") and TB_ChapterName_Sub (its name); read them a tick later
+local chapter_last = ""
+local function on_chapter(ctx)
+    local w = self_of(ctx)
+    touched()
+    Menus.defer(function()
+        if not UI.valid(w) then return end
+        local main = UI.clean(UI.text_of(safe(function() return w.TB_ChapterName_Main end)) or "") or ""
+        local sub = UI.clean(UI.text_of(safe(function() return w.TB_ChapterName_Sub end)) or "") or ""
+        local t = main .. (sub ~= "" and (", " .. sub) or "")
+        if t ~= "" and t ~= chapter_last then chapter_last = t; Out.say(t) end
+    end)
 end
 
 -- ---------------------------------------------------------------- hook table
@@ -381,9 +434,22 @@ local SPECS = {
     { MM .. "WBP_UI_MainMenu_Menu_List.WBP_UI_MainMenu_Menu_List_C:play_hover", function(ctx) Menus.side = nil; generic_hover(ctx) end },
     -- in-match pause menu (arcade, versus, story...)
     { "/Game/UI/Widget/Pause/WBP_UI_Pause_MenuButton.WBP_UI_Pause_MenuButton_C:Select", generic_hover },
-    -- story / cutscene subtitles
-    { "/Game/UI/Widget/Subtitle/WBP_UI_Subtitle.WBP_UI_Subtitle_C:CreateFrontSubtitle", on_subtitle },
-    { "/Game/UI/Widget/Subtitle/WBP_UI_Subtitle.WBP_UI_Subtitle_C:CreateBackSubtitle", on_subtitle },
+    -- Jukebox preset window (Preset / Shuffle); the other Jukebox lists are watched (watch.lua)
+    { "/Game/UI/Widget/JukeBox/WBP_UI_JukeBox_PresetWin.WBP_UI_JukeBox_PresetWin_C:Select", function(ctx, i) touched(); require("watch").on_preset_select(ctx, i) end },
+    -- Tekken Ball: ball and damage select, CPU difficulty
+    { "/Game/UI/Widget/TekkenBall/WBP_UI_TB_BallSlot.WBP_UI_TB_BallSlot_C:OnCursorMoveUMG", ball_slot_cursor },
+    { "/Game/UI/Widget/TekkenBall/WBP_UI_TB_BallSlot.WBP_UI_TB_BallSlot_C:OnSetInfoUMG", ball_slot_info },
+    { "/Game/UI/Widget/TekkenBall/WBP_UI_TB_DamageSet.WBP_UI_TB_DamageSet_C:OnCursorMoveUMG", damage_cursor },
+    { "/Game/UI/Widget/Dialog/WBP_UI_DifficultySelect_MenuButton.WBP_UI_DifficultySelect_MenuButton_C:Select", generic_hover },
+    -- story chapter select
+    { "/Game/UI/Widget/Story_ChapterSelect/WBP_UI_Story_ChapterSelect.WBP_UI_Story_ChapterSelect_C:SetChapterTitleText", on_chapter },
+    -- story subtitles are read by watch.lua: a hook on CreateFrontSubtitle
+    -- fired during a loading screen (another thread) and froze the Lua side
+    -- dialogs: read the whole dialog when it opens
+    { "/Game/UI/Widget/Dialog/WBP_UI_Dialog.WBP_UI_Dialog_C:PlayAnimIn", function(ctx) on_dialog(ctx) end },
+    { "/Game/UI/Widget/Dialog/WBP_UI_Dialog_Menu.WBP_UI_Dialog_Menu_C:PlayAnimIn", function(ctx) on_dialog(ctx) end },
+    { "/Game/UI/Widget/Dialog/WBP_UI_Dialog_LR.WBP_UI_Dialog_LR_C:OpenDialog", function(ctx) on_dialog(ctx) end },
+    { "/Game/UI/Widget/Dialog/WBP_UI_Dialog_LR_Menu.WBP_UI_Dialog_LR_Menu_C:PlayAnimIn", function(ctx) on_dialog(ctx) end },
     -- dialog buttons (Yes / No / OK); the LR variant inherits Select
     { "/Game/UI/Widget/Dialog/WBP_UI_Dialog_TextButton.WBP_UI_Dialog_TextButton_C:Select", generic_hover },
     { "/Game/UI/Widget/Elements/WBP_UI_InformationBar.WBP_UI_InformationBar_C:OnSetMessage", function(ctx) local w = self_of(ctx); if w then info_bar(w) end end },
@@ -402,7 +468,7 @@ local DIALOG_FUNCS = { PlayAnimIn = true, OpenDialog = true, Open = true }
 -- functions handed the text they display (Arcade Quest talk, tutorial
 -- captions, Tekken Ball select info): speak the arguments
 local TEXT_FUNCS = { OnSetTextId = true, OnSetTelopTextId = true, OnSetTitleTextId = true,
-                     OnSetInfoUMG = true }
+                     OnSetInfoUMG = true }   -- Tekken Ball ball slot has its own handler
 -- cursor events with number arguments: logged for now, to map them
 local LOG_FUNCS = { OnCursorMoveUMG = true, CallSelectSlotCallback = true }
 
@@ -421,7 +487,24 @@ local function try_register(path, fn)
     return ok
 end
 
--- async loop: register whatever has loaded since last time
+function Menus.add_pending(path, fn)
+    if not registered[path] then pending[path] = fn end
+end
+
+-- game thread (frame, once a second): is any pending hook's class loaded?
+-- main.lua's registration job only runs when this says so.
+Menus.pending_ready = false
+function Menus.check_pending()
+    local have = false
+    for path in pairs(pending) do
+        local cls = path:match("^(.-):")
+        local o = cls and StaticFindObject(cls)
+        if o and UI.valid(o) then have = true break end
+    end
+    Menus.pending_ready = have
+end
+
+-- game thread (main.lua frame()): register whatever has loaded since last time
 function Menus.register_pending()
     for path, fn in pairs(pending) do
         if try_register(path, fn) then pending[path] = nil end
@@ -448,12 +531,13 @@ function Menus.scan_classes()
                 end
                 local is_dialog = short:find("Dialog") ~= nil and not short:find("Button")
                 -- banners animate on every cursor move without being the cursor
-                if short:find("BlackPen") or short:find("Banner") then dyn = {} end
+                -- (so do whole menu tables: their select animation reads every row)
+                if short:find("BlackPen") or short:find("Banner") or short:find("Menu_Table") then dyn = {} end
                 safe(function()
                     c:ForEachFunction(function(f)
                         local fn = f:GetFName():ToString()
                         local p = path .. ":" .. fn
-                        if not dyn and not registered[p] then
+                        if not dyn and not registered[p] and not pending[p] then
                             if (HOVER_FUNCS[fn] or (fn == "Select" and short:find("Button"))) and not (short == "WBP_UI_MainMenu_Menu_List_C") then pending[p] = generic_hover
                             elseif is_dialog and DIALOG_FUNCS[fn] then pending[p] = on_dialog
                             elseif TEXT_FUNCS[fn] then pending[p] = speak_args(short .. ":" .. fn, true)
@@ -477,7 +561,15 @@ local PRELOAD = {
     "/Game/UI/Widget/Practice/WBP_UI_CommandList",
     "/Game/UI/Widget/Pause/WBP_UI_Pause_MenuButton",
     "/Game/UI/Widget/Dialog/WBP_UI_Dialog_TextButton",
-    "/Game/UI/Widget/Subtitle/WBP_UI_Subtitle",
+    "/Game/UI/Widget/Dialog/WBP_UI_Dialog",
+    "/Game/UI/Widget/Story_ChapterSelect/WBP_UI_Story_ChapterSelect",
+    "/Game/UI/Widget/Dialog/WBP_UI_Dialog_Menu",
+    "/Game/UI/Widget/Dialog/WBP_UI_Dialog_LR",
+    "/Game/UI/Widget/Dialog/WBP_UI_Dialog_LR_Menu",
+    "/Game/UI/Widget/TekkenBall/WBP_UI_TB_BallSlot",
+    "/Game/UI/Widget/TekkenBall/WBP_UI_TB_DamageSet",
+    "/Game/UI/Widget/Dialog/WBP_UI_DifficultySelect_MenuButton",
+    "/Game/UI/Widget/JukeBox/WBP_UI_JukeBox_PresetWin",
 }
 local preloaded = false
 function Menus.preload()

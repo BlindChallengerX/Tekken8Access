@@ -1,4 +1,4 @@
-# TekkenA11y developer notes (rebuild 0.7.0, 2026-10-16, game ver. 3.02.02)
+﻿# TekkenA11y developer notes (rebuild 0.7.0, 2026-10-16, game ver. 3.02.02)
 
 ## Layout
 - `mod/Scripts` - UE4SS Lua (main, out, menus, fight, data, lib/ui, lib/notation, dev).
@@ -15,12 +15,26 @@ Create `Mods\TekkenA11y\dev.txt`; `python tools\t8.py lua "return 1"` or `luaf f
 runs Lua on the game thread, `--async` first line runs it off-thread. Output in
 %TEMP%\TekkenA11y\out.txt. Helper log (SAY lines with ms times): %TEMP%\TekkenA11y\helper.log.
 
-## UE4SS 3.0.1 rules learned the hard way
+## UE4SS 3.0.1 rules learned the hard way (hangs and crashes, 2026-10-16)
 - Never hook native `/Script/...` functions with a Lua callback: the Lua thread froze.
-- Call RegisterHook only on the game thread (from an async loop it deadlocked when a hook
-  fired at the same time).
-- Do not call ExecuteInGameThread from inside a hook callback (froze); use Menus.defer,
-  run by the 40 ms game-thread tick.
+- RegisterHook only on the game thread, and not inside a hook callback. From the async thread
+  it deadlocked, and on a function the game thread was running that frame it crashed UE4SS
+  (access violation in hook dispatch, crash report 16:31).
+- ExecuteInGameThread: never two outstanding. A second call while one was queued/running
+  deadlocked (game thread waiting for the Lua lock, async thread holding it and waiting on the
+  queue mutex; seen with tools\threads.py). Windows then killed the game as hung (user saw it).
+  Treat a job as finished only ~0.2 s after it returned; jobs can also be dropped (title).
+- Never touch game objects from the async thread: RegisterKeyBind callbacks run there too, so
+  keys only queue work.
+- So the mod now runs all per-frame work inside game Blueprint ticks (main.lua frame(): hooked
+  BP_PolarisEffectManager / StageEffectManager / ItemEffectManager ReceiveTick and
+  WBP_UI_InformationBar Tick, throttled to ~35 ms). One LoopAsync (1 s) queues a single
+  ExecuteInGameThread job for preload, class scan and hook registration.
+- Do not call ExecuteInGameThread from inside a hook callback (froze); use Menus.defer (run by
+  frame()).
+- Hooking every function of a screen (tools\discover_all.lua) can break that screen (input
+  stayed disabled in Jukebox and story chapter select). Use it, then restart the game.
+- A subtitle hook (CreateFrontSubtitle) froze Lua during a loading screen: subtitles are polled.
 - FindFirstOf can return a dead object: check IsValid before GetClass (a console query
   without the check probably crashed the game once).
 - LoadAsset needs the class path: `/Game/.../WBP_X.WBP_X_C`.
@@ -49,7 +63,21 @@ runs Lua on the game thread, `--async` first line runs it off-thread. Output in
 - Move list (`WBP_UI_CommandList_C:SetCursorIndex(i)`, also sample combos):
   `.WBP_UI_CommandList_Win.ListView_1:GetItemAt(i)` -> BP_CommandList_Button_Item_C
   {isHeading, no, nameText, commandText, noteText, damageText, isRawNameText}, text ids.
-- Pause menu (other modes): `WBP_UI_Pause_MenuButton_C:Select` - not tested in game yet.
+- Pause menu (other modes): `WBP_UI_Pause_MenuButton_C:Select` (tested in Tekken Ball and story).
+  Open state: `WBP_UI_Pause_C` IsVisible (never "in viewport", it is nested).
+- Jukebox (watch.lua): carousel = WBP_UI_JukeBox_C.select_jacket_next into play_list_infos
+  (JukeBoxPlayList textId/Selected/Unlocked); BgmWin/StageWin ListView_Buttons + selected_index,
+  items .Info JukeBoxBGM {BgmTextId, Equipped, Playing, Unlocked, Store} / JukeBoxMyList
+  {SceneTextId, BgmTextId, Climax}; series name = BgmWin.TB_titleName; PresetWin_C:Select(i).
+  Tabs switch with Num -.
+- Tekken Ball: WBP_UI_TB_BallSlot_C:OnCursorMoveUMG(count, index) + OnSetInfoUMG(desc); names on
+  WBP_UI_TB_BallSlot_Panel_C {SlotNum, side, IsLocked, TB_name_1P/2P}. WBP_UI_TB_DamageSet_C:
+  OnCursorMoveUMG -> WBP_UI_TB_DamageSet_Window_C.TB_num. CPU difficulty:
+  WBP_UI_DifficultySelect_MenuButton_C:Select. Ball: PolarisBallActor (IsVisibleActor),
+  K2_GetActorLocation; floor ~ fighter actor Z - 100.
+- Story: WBP_UI_Story_ChapterSelect_C:SetChapterTitleText -> TB_ChapterName_Main/_Sub
+  (Left/Right). Subtitles: WBP_UI_Subtitle_C read every tick. Story fighters have their own ids
+  (e.g. 121, 118, classes BP_Character_XXE/XXB): fight start says "Fight start".
 - Dialogs: `WBP_UI_Dialog_TextButton_C:Select` (Yes/No, Up/Down keys), dialog PlayAnimIn.
 
 ## Command icons (lib/notation.lua)
@@ -77,6 +105,8 @@ dialog buttons 28-51 ms, move list 16-75 ms, practice rows 100-170 ms (deferred 
 tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file outbox.
 
 ## Not done / unverified
-- Regular pause menu in Arcade/Versus/Story; story subtitles (old 0.6 had a poll).
-- Keyboard key names for kbd_ icons; Roger Jr. id.
-- Beacon only uses the camera frame; no wall/ring cues yet.
+- Arcade Quest talk/tutorial text hooks (OnSetTextId...) are generic and untested.
+- Keyboard key names for kbd_ icons; Roger Jr. id; story fighter names.
+- Beacon only uses the camera frame; no wall cues yet. Ball cue untested by ear.
+- The keyboard is sometimes ignored at the title screen (a controller is plugged in): someone
+  has to press a controller button there.

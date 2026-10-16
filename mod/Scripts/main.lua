@@ -6,8 +6,16 @@
   key press and speech. Menus are read from the game's own Blueprint events
   (menus.lua); the fight beacon reads fighter positions (fight.lua).
 
-  Keys: F3 subtitles on/off, F4 Tekken Ball sound on/off, F5 fight status, F6 beacon on/off, F7 repeat move with notes,
-        F8 repeat last speech, F9 read screen, F11 speech on/off.
+  Keys: F3 subtitles on/off, F4 Tekken Ball sound on/off, F5 fight status,
+        F6 beacon on/off, F7 repeat move with notes, F8 repeat last speech,
+        F9 read screen, F11 speech on/off.
+
+  Threads: everything that touches the game runs on the game thread, inside
+  the game's own per-frame Blueprint ticks (frame() below). UE4SS 3.0.1 hung
+  the game (game thread waiting for the Lua lock while UE4SS's async thread,
+  holding it, waited on the game-thread queue) when work was sent there with
+  LoopAsync + ExecuteInGameThread, so neither is used for regular work. The
+  one async loop only registers the frame hooks at startup and then stops.
 ]]
 local MOD_DIR = (package.path or ""):match("([^;]*[\\/]Mods[\\/]TekkenA11y)[\\/]Scripts")
 
@@ -24,18 +32,23 @@ if MOD_DIR then
     os.execute('start "" "' .. MOD_DIR .. '\\speaker\\TekkenA11yHelper.exe"')
 end
 
+local Dev = nil
 do
     local f = MOD_DIR and io.open(MOD_DIR .. "\\dev.txt", "r")
-    if f then f:close(); local ok, e = pcall(require, "dev"); if not ok then print("[A11y] dev: " .. tostring(e) .. "\n") end end
+    if f then
+        f:close()
+        local ok, e = pcall(require, "dev")
+        if ok then Dev = e else print("[A11y] dev: " .. tostring(e) .. "\n") end
+    end
 end
 
 -- ---------------------------------------------------------------- keys
+-- Key callbacks run on UE4SS's own thread: they only queue the action, the
+-- next frame on the game thread performs it.
+local key_queue = {}
 local function bind(key, fn)
     if not Key[key] then return end
-    RegisterKeyBind(Key[key], function()
-        local ok, err = pcall(fn)
-        if not ok then Out.log("key " .. key .. ": " .. tostring(err)) end
-    end)
+    RegisterKeyBind(Key[key], function() key_queue[#key_queue + 1] = { key, fn } end)
 end
 
 local function read_screen()
@@ -49,10 +62,10 @@ local function read_screen()
     Out.say(#parts > 0 and table.concat(parts, ". ") or "No text on screen.", true)
 end
 
+bind("F3", Menus.toggle_subtitles)
+bind("F4", Fight.toggle_ball)
 bind("F5", Fight.status)
 bind("F6", Fight.toggle_beacon)
-bind("F4", Fight.toggle_ball)
-bind("F3", Menus.toggle_subtitles)
 bind("F7", Menus.repeat_move)
 bind("F8", function() Out.send("S1\t" .. (Out.last ~= "" and Out.last or "Nothing yet.")) end)
 bind("F9", read_screen)
@@ -61,47 +74,80 @@ bind("F11", function()
     Out.send("S1\t" .. (Out.enabled and "Speech on" or "Speech off"))
 end)
 
--- ---------------------------------------------------------------- loops
--- 50 ms: delayed help text; once a second, hook classes that have loaded.
--- RegisterHook runs on the game thread only: called from this async thread
--- while a hooked function fired on the game thread, it deadlocked UE4SS.
-local n50 = 0
-local scan_busy = false
-LoopAsync(50, function()
-    Out.tick()
-    n50 = n50 + 1
-    if n50 % 20 == 0 and not scan_busy then
-        scan_busy = true
-        -- in a fight, scan only while a pause/practice menu is open
-        local scan = n50 % 40 == 0 and (not Fight.active() or Fight.menu_open())
-        ExecuteInGameThread(function()
-            local ok, err = pcall(function()
-                if scan then Menus.scan_classes() end
-                if not Fight.active() and UI.shown(FindFirstOf("WBP_UI_MainMenu_C")) then Menus.preload() end
-                Menus.register_pending()
-            end)
-            if not ok then Out.log("scan: " .. tostring(err)) end
-            scan_busy = false
-        end)
-    end
-    return false
-end)
+-- ---------------------------------------------------------------- frame
+-- Runs at most every 35 ms on the game thread: keys, the delayed help line,
+-- deferred menu reads, screen watchers, subtitles, the fight beacon.
+local last_run, n = -1, 0
+local function step(name, fn)
+    local ok, err = pcall(fn)
+    if not ok then Out.log(name .. ": " .. tostring(err)) end
+end
 
--- 40 ms: deferred menu reads, fight beacon
-local fight_busy = false
-LoopAsync(40, function()
-    if fight_busy then return false end
-    fight_busy = true
-    ExecuteInGameThread(function()
-        Menus.run_deferred()
-        if not Fight.active() then
-            local okw, errw = pcall(Watch.tick)
-            if not okw then Out.log("watch: " .. tostring(errw)) end
+local function frame()
+    local t = os.clock()
+    if t - last_run < 0.035 then return end
+    last_run = t
+    n = n + 1
+    while #key_queue > 0 do
+        local k = table.remove(key_queue, 1)
+        step("key " .. k[1], k[2])
+    end
+    step("out", Out.tick)
+    step("deferred", Menus.run_deferred)
+    if not Fight.active() then step("watch", Watch.tick) end
+    step("subtitles", Watch.subtitles)
+    step("fight", Fight.tick)
+    if Dev then step("dev", Dev.poll) end
+end
+
+-- Per-frame Blueprint events: the effect managers tick in menus and battles,
+-- the information bar wherever it shows. Several are hooked; frame() runs
+-- once per 35 ms whichever arrives first.
+local FRAME_HOOKS = {
+    "/Game/Blueprints/BP_PolarisEffectManager.BP_PolarisEffectManager_C:ReceiveTick",
+    "/Game/Stage/Common/Blueprints/BP_PolarisStageEffectManager.BP_PolarisStageEffectManager_C:ReceiveTick",
+    "/Game/Blueprints/BP_PolarisItemEffectManager.BP_PolarisItemEffectManager_C:ReceiveTick",
+    "/Game/UI/Widget/Elements/WBP_UI_InformationBar.WBP_UI_InformationBar_C:Tick",
+}
+for _, p in ipairs(FRAME_HOOKS) do Menus.add_pending(p, frame) end
+
+-- Hook registration (and loading the screens we hook) happens in one
+-- game-thread job, never inside a hook callback and never on the async thread:
+--   * RegisterHook from the async thread, on a function the game thread was
+--     running that frame, crashed UE4SS (access violation in hook dispatch);
+--   * a second ExecuteInGameThread while one was queued or running
+--     deadlocked UE4SS, so only one job exists at a time, and it counts as
+--     finished only a little after it returned (UE4SS still holds its queue
+--     lock then). A job that never ran in 30 s is taken as dropped.
+-- It is queued once a second whatever the frame hooks do (they do not tick on
+-- every screen). This loop itself touches no game objects.
+local job_queued, job_done_at, job_since = false, nil, 0
+A11Y_JOB = { queued = 0, ran = 0 }        -- for the dev console
+LoopAsync(1000, function()
+    local t = os.clock()
+    if job_queued then
+        if job_done_at then
+            if t - job_done_at < 0.2 then return false end
+        elseif t - job_since < 30 then
+            return false
         end
-        local ok, err = pcall(Fight.tick)
-        if not ok then Out.log("fight: " .. tostring(err)) end
-        fight_busy = false
+        job_queued, job_done_at = false, nil
+    end
+    job_queued, job_done_at, job_since = true, nil, t
+    A11Y_JOB.queued = A11Y_JOB.queued + 1
+    local ok = pcall(ExecuteInGameThread, function()
+        A11Y_JOB.ran = A11Y_JOB.ran + 1
+        pcall(function()
+            if not Fight.active() and UI.shown(FindFirstOf("WBP_UI_MainMenu_C")) then Menus.preload() end
+            -- new widget classes every two seconds (in a fight only while a
+            -- pause or practice menu is open)
+            if A11Y_JOB.ran % 2 == 0 and (not Fight.active() or Fight.menu_open()) then Menus.scan_classes() end
+            Menus.check_pending()
+            if Menus.pending_ready then Menus.register_pending() end
+        end)
+        job_done_at = os.clock()
     end)
+    if not ok then job_queued = false end
     return false
 end)
 

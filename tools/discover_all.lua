@@ -21,6 +21,9 @@ for _, c in ipairs(classes) do
     local fname = f:GetFName():ToString()
     local l = fname:lower()
     if SKIP[l] or l:find("ubergraph") or l:find("delegatesignature") then return end
+    -- hooking functions that return a value (HasFinished..., Get..., Is...) broke the
+    -- Jukebox: its input stayed disabled. Leave them alone.
+    if fname:find("^Has") or fname:find("^Get") or fname:find("^Is") or fname:find("^Can") then return end
     local path = cname .. ":" .. fname
     if disc[path] then return end
     disc[path] = true

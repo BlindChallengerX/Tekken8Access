@@ -6,6 +6,7 @@ local PAT = { "hover", "select", "focus", "active", "cursor", "highlight", "chan
 local SKIP = { tick = true, updateballoontime = true, updatescroll = true, updatetext = true }
 local function want(n)
   local l = n:lower()
+  if n:find("^Has") or n:find("^Get") or n:find("^Is") or n:find("^Can") then return false end  -- return values: hooking broke input
   if SKIP[l] or l:find("ubergraph") or l:find("delegatesignature") or l:find("bndevt") or l:find("k2node") then return false end
   for _, p in ipairs(PAT) do if l:find(p) then return true end end
   return false

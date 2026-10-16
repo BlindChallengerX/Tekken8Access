@@ -168,8 +168,16 @@ CUR_ROW = """for _, w in ipairs(FindAllOf('WBP_UI_MainMenu_Menu_List_C') or {}) 
   if w.State == 1 and w:IsVisible() then return w.TB_title_ON:GetText():ToString() end end return ''"""
 
 
+HAS_ROW = """local n = %s for _, w in ipairs(FindAllOf(\"WBP_UI_MainMenu_Menu_List_C\") or {}) do
+  if w.State ~= 0 and w:IsVisible() and w.TB_title_ON:GetText():ToString() == n then return \"yes\" end end return \"no\""""
+
+
 def to_row(name, limit=20):
-    """Main menu: press down until the highlighted row is `name`."""
+    """Main menu: switch tabs until a row `name` is listed, then press down until it is highlighted."""
+    for _ in range(7):
+        if "yes" in lua(HAS_ROW % repr(name).replace("\x27", "\x22")):
+            break
+        press("numminus", after=0.6)
     for _ in range(limit):
         cur = lua(CUR_ROW).replace("=> ", "").strip()
         if cur == name:
@@ -188,7 +196,7 @@ def to_practice():
 if __name__ == "__main__" and sys.argv[1] == "practice": to_practice(); print(visible())
 
 
-def boot(limit=150):
+def boot(limit=260):
     """After a (re)start: Enter through title, Esc through news, until the main menu."""
     for i in range(limit):
         v = visible()

@@ -52,16 +52,22 @@ local function hud_up()
 end
 
 -- a pause / practice menu / move list on screen: mute the beacon
-local MENUS = { "WBP_UI_PracticeMenu_C", "WBP_UI_CommandList_C", "WBP_UI_Pause_Menu_C", "WBP_UI_Pause_C" }
+-- (the in-match pause menu, WBP_UI_Pause_C, is nested in another widget: it
+-- is never "in viewport", only its visibility changes)
+local MENUS = { "WBP_UI_PracticeMenu_C", "WBP_UI_CommandList_C" }
 local function any_menu()
     for _, n in ipairs(MENUS) do
         local w = safe(function() return FindFirstOf(n) end)
         if w and UI.shown(w) then return true end
     end
-    return false
+    local p = safe(function() return FindFirstOf("WBP_UI_Pause_C") end)
+    return p ~= nil and UI.valid(p) and safe(function() return p:IsVisible() end) == true
 end
 
-local function name(n) return D.fighter(safe(function() return f[n].FighterId end)) end
+local function name(n)
+    local id = safe(function() return f[n].FighterId end)
+    return D.fighters[id] or (n == Fight.me and "You" or "Opponent")
+end
 
 local function start()
     hp[0], hp[1] = nil, nil      -- health reads 0 until the round is set up
@@ -71,7 +77,11 @@ local function start()
     if key ~= match_key then
         match_key = key
         local me, op = Fight.me, 1 - Fight.me
-        Out.queue(name(me) .. " versus " .. name(op) .. ".")
+        -- story mode uses fighter versions with their own ids (not on the
+        -- select screen, so not in data.lua): then just say the fight starts
+        local a = D.fighters[safe(function() return f[me].FighterId end)]
+        local b = D.fighters[safe(function() return f[op].FighterId end)]
+        Out.queue(a and b and (a .. " versus " .. b .. ".") or "Fight start.")
     end
 end
 

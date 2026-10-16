@@ -1,8 +1,9 @@
 --[[
   dev.lua - developer console, only loaded when Mods\TekkenA11y\dev.txt exists.
-  tools\t8.py writes Lua to %TEMP%\TekkenA11y\cmd.lua; it runs on the game
-  thread and its output (p(...) calls and the return value) lands in out.txt.
-  Globals set by commands persist in Dev.env between calls.
+  tools\t8.py writes Lua to %TEMP%\TekkenA11y\cmd.lua; main.lua's frame()
+  calls Dev.poll on the game thread, which runs it; the output (p(...) calls
+  and the return value) lands in out.txt. Globals set by commands persist in
+  Dev.env between calls.
 ]]
 local Dev = {}
 local base = (os.getenv("TEMP") or "C:\\Temp") .. "\\TekkenA11y"
@@ -33,14 +34,13 @@ local function run(code)
     write_out(table.concat(buf, "\n"))
 end
 
-LoopAsync(50, function()
+-- game thread, from frame()
+function Dev.poll()
     local f = io.open(CMD, "r")
-    if not f then return false end
+    if not f then return end
     local code = f:read("a"); f:close(); os.remove(CMD)
-    if code:sub(1, 6) == "--async" then run(code)        -- off the game thread
-    else ExecuteInGameThread(function() run(code) end) end
-    return false
-end)
+    run(code)
+end
 
 print("[A11y] dev console on")
 return Dev
