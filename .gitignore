@@ -1,0 +1,7 @@
+out/
+old-v0.6/Polaris/
+old-v0.6/speaker/
+*.exe
+__pycache__/
+old-v0.6/dump.txt
+old-v0.6/charselect_profiles.txt
