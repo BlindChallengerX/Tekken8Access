@@ -43,6 +43,28 @@ function Menus.run_deferred()
 end
 local function touched() Menus.last_menu_t = os.clock() end
 
+-- ---------------------------------------------------------------- menus open in a fight
+-- The fight module mutes the beacon while these show; it gets the widgets
+-- from here (searching for them costs a whole frame).
+local function saw_menu(kind, w)
+    local F = package.loaded["fight"]
+    if F and F.saw_menu then F.saw_menu(kind, w) end
+end
+
+-- the pause menu button lives inside WBP_UI_Pause_C: walk up its outers
+-- (button -> widget tree -> owning widget ...) once to find it
+local pause_found = nil
+local function pause_seen(ctx)
+    if UI.valid(pause_found) then return end
+    local o = self_of(ctx)
+    for _ = 1, 8 do
+        o = o and safe(function() return o:GetOuter() end)
+        if not o or not UI.valid(o) then return end
+        local n = safe(function() return o:GetClass():GetFName():ToString() end) or ""
+        if n == "WBP_UI_Pause_C" then pause_found = o; saw_menu("pause", o); return end
+    end
+end
+
 -- ---------------------------------------------------------------- help text
 Menus.row_t = -10                -- last time a practice-menu row was spoken
 
@@ -67,7 +89,7 @@ local read_practice_row     -- defined with the cursor handlers below
 
 local function practice_fallback()
     if os.clock() - Menus.row_t < 0.4 then return end
-    local m = safe(function() return FindFirstOf("WBP_UI_PracticeMenu_C") end)
+    local m = Menus.practice_menu        -- handed over by its cursor hooks (no search)
     if not UI.shown(m) then return end
     if any_active(safe(function() return m.ListView_2 end)) then return end
     local col = any_active(safe(function() return m.ListView_1 end)) and 2 or 1
@@ -77,10 +99,13 @@ end
 
 -- The information bar at the bottom explains the highlighted item.
 local function info_bar(w)
+    Menus.last_menu_t = os.clock()
     local t = UI.read(w)
     if t ~= "" then Out.help(t) end
     Menus.defer(practice_fallback, 0.12)   -- the highlight flag updates a little later
 end
+
+function Menus.on_info_bar(ctx) local w = self_of(ctx); if w then info_bar(w) end end
 
 -- ---------------------------------------------------------------- generic
 local generic_last, generic_t = nil, -1
@@ -233,6 +258,8 @@ local function practice_cursor(layer)
         local m = self_of(ctx)
         local i = arg(index)
         if not m or type(i) ~= "number" then return end
+        saw_menu("practice", m)
+        Menus.practice_menu = m
         if not pm_batch then pm_batch = {}; Menus.defer(practice_flush) end
         pm_batch[layer], pm_menu = i, m
     end
@@ -273,6 +300,7 @@ local function on_movelist_cursor(ctx, index)
     local m = self_of(ctx)
     local i = arg(index)
     if not m or type(i) ~= "number" then return end
+    saw_menu("commandlist", m)
     local it, count = movelist_item(m, i)
     if not it then return end
     touched()
@@ -353,6 +381,7 @@ end
 -- Ball select: WBP_UI_TB_BallSlot_C:OnCursorMoveUMG(count, index, ...); the
 -- names are on WBP_UI_TB_BallSlot_Panel_C (SlotNum, side, IsLocked,
 -- TB_name_1P / _2P). The description comes in OnSetInfoUMG(text).
+local ball_panels = nil
 local function ball_slot_cursor(ctx, count, index)
     local w = self_of(ctx)
     local i = arg(index)
@@ -360,7 +389,11 @@ local function ball_slot_cursor(ctx, count, index)
     local side = safe(function() return w.side end) or 0
     touched()
     Menus.defer(function()
-        for _, p in ipairs(FindAllOf("WBP_UI_TB_BallSlot_Panel_C") or {}) do
+        -- the panels are searched once per visit (a search costs ~25 ms)
+        if not (ball_panels and ball_panels[1] and UI.valid(ball_panels[1])) then
+            ball_panels = FindAllOf("WBP_UI_TB_BallSlot_Panel_C") or {}
+        end
+        for _, p in ipairs(ball_panels) do
             if UI.valid(p) and safe(function() return p.SlotNum == i and p.side == side and p:IsVisible() end) then
                 local nm = UI.clean(UI.text_of(safe(function() return p["TB_name_" .. (side + 1) .. "P"] end)) or "")
                 if nm and not nm:find("^Preset") then
@@ -432,9 +465,13 @@ local SPECS = {
     { SD .. "OnSelectLeftSide", function() touched(); Menus.side = 0; Out.say("Left side") end },
     { SD .. "OnSelectRightSide", function() touched(); Menus.side = 1; Out.say("Right side") end },
     { MM .. "WBP_UI_MainMenu_Menu_List.WBP_UI_MainMenu_Menu_List_C:play_hover", function(ctx) Menus.side = nil; generic_hover(ctx) end },
+    -- the battle HUD ticks only while a fight is on screen: free fight detection
+    { "/Game/UI/Widget/HUD/S2/WBP_UI_HUD_S2.WBP_UI_HUD_S2_C:Tick", function() local F = package.loaded["fight"]; if F then F.on_hud_tick() end end },
     -- in-match pause menu (arcade, versus, story...)
-    { "/Game/UI/Widget/Pause/WBP_UI_Pause_MenuButton.WBP_UI_Pause_MenuButton_C:Select", generic_hover },
-    -- Jukebox preset window (Preset / Shuffle); the other Jukebox lists are watched (watch.lua)
+    { "/Game/UI/Widget/Pause/WBP_UI_Pause_MenuButton.WBP_UI_Pause_MenuButton_C:Select", function(ctx) pause_seen(ctx); generic_hover(ctx) end },
+    -- Jukebox: the screen widget for the watcher (watch.lua), the preset window
+    { "/Game/UI/Widget/JukeBox/WBP_UI_JukeBox.WBP_UI_JukeBox_C:SetInputEnable", function(ctx) require("watch").jb = self_of(ctx) end },
+    { "/Game/UI/Widget/JukeBox/WBP_UI_JukeBox.WBP_UI_JukeBox_C:RequestAnimIn", function(ctx) require("watch").jb = self_of(ctx) end },
     { "/Game/UI/Widget/JukeBox/WBP_UI_JukeBox_PresetWin.WBP_UI_JukeBox_PresetWin_C:Select", function(ctx, i) touched(); require("watch").on_preset_select(ctx, i) end },
     -- Tekken Ball: ball and damage select, CPU difficulty
     { "/Game/UI/Widget/TekkenBall/WBP_UI_TB_BallSlot.WBP_UI_TB_BallSlot_C:OnCursorMoveUMG", ball_slot_cursor },
@@ -452,7 +489,8 @@ local SPECS = {
     { "/Game/UI/Widget/Dialog/WBP_UI_Dialog_LR_Menu.WBP_UI_Dialog_LR_Menu_C:PlayAnimIn", function(ctx) on_dialog(ctx) end },
     -- dialog buttons (Yes / No / OK); the LR variant inherits Select
     { "/Game/UI/Widget/Dialog/WBP_UI_Dialog_TextButton.WBP_UI_Dialog_TextButton_C:Select", generic_hover },
-    { "/Game/UI/Widget/Elements/WBP_UI_InformationBar.WBP_UI_InformationBar_C:OnSetMessage", function(ctx) local w = self_of(ctx); if w then info_bar(w) end end },
+    -- (the information bar's OnSetMessage is main.lua's bootstrap hook: it
+    -- calls Menus.on_info_bar)
 }
 -- classes found at runtime (practice menu, move list) are added by path later
 local DYN = {
@@ -475,7 +513,8 @@ local LOG_FUNCS = { OnCursorMoveUMG = true, CallSelectSlotCallback = true }
 local registered = {}     -- path -> true once hooked
 local pending = {}        -- path -> fn
 
-for _, s in ipairs(SPECS) do pending[s[1]] = s[2] end
+local important = {}      -- SPECS and add_pending paths: checked every pass
+for _, s in ipairs(SPECS) do pending[s[1]] = s[2]; important[s[1]] = true end
 
 local function try_register(path, fn)
     if registered[path] then return true end
@@ -488,20 +527,43 @@ local function try_register(path, fn)
 end
 
 function Menus.add_pending(path, fn)
-    if not registered[path] then pending[path] = fn end
+    if not registered[path] then pending[path] = fn; important[path] = true end
 end
 
 -- game thread (frame, once a second): is any pending hook's class loaded?
 -- main.lua's registration job only runs when this says so.
+-- StaticFindObject costs ~0.2 ms and there are a few hundred pending hooks
+-- (generic ones of classes not loaded), so this looks at no more than 12
+-- classes per call, in turn.
 Menus.pending_ready = false
+local check_list, check_pos = {}, 0
 function Menus.check_pending()
-    local have = false
-    for path in pairs(pending) do
-        local cls = path:match("^(.-):")
-        local o = cls and StaticFindObject(cls)
-        if o and UI.valid(o) then have = true break end
+    if check_pos >= #check_list then
+        local seen = {}
+        check_list, check_pos = {}, 0
+        for path in pairs(pending) do
+            local cls = path:match("^(.-):")
+            if cls and not seen[cls] then seen[cls] = true; check_list[#check_list + 1] = cls end
+        end
     end
-    Menus.pending_ready = have
+    for _ = 1, 12 do
+        check_pos = check_pos + 1
+        local cls = check_list[check_pos]
+        if not cls then break end
+        local o = StaticFindObject(cls)
+        if o and UI.valid(o) then Menus.pending_ready = true end
+    end
+    -- the fixed hooks (SPECS, frame ticks, preloaded screens) are few: check
+    -- their classes every time, each class once
+    local seen = {}
+    for path in pairs(pending) do
+        local cls = important[path] and path:match("^(.-):")
+        if cls and not seen[cls] then
+            seen[cls] = true
+            local o = StaticFindObject(cls)
+            if o and UI.valid(o) then Menus.pending_ready = true return end
+        end
+    end
 end
 
 -- game thread (main.lua frame()): register whatever has loaded since last time
@@ -570,6 +632,8 @@ local PRELOAD = {
     "/Game/UI/Widget/TekkenBall/WBP_UI_TB_DamageSet",
     "/Game/UI/Widget/Dialog/WBP_UI_DifficultySelect_MenuButton",
     "/Game/UI/Widget/JukeBox/WBP_UI_JukeBox_PresetWin",
+    "/Game/UI/Widget/JukeBox/WBP_UI_JukeBox",
+    "/Game/UI/Widget/HUD/S2/WBP_UI_HUD_S2",
 }
 local preloaded = false
 function Menus.preload()
@@ -581,7 +645,7 @@ function Menus.preload()
         local path = p .. "." .. short
         local ok = pcall(LoadAsset, path)
         local dyn = DYN[short]
-        if dyn then for _, d in ipairs(dyn) do pending[path .. ":" .. d[1]] = d[2] end end
+        if dyn then for _, d in ipairs(dyn) do pending[path .. ":" .. d[1]] = d[2]; important[path .. ":" .. d[1]] = true end end
         Out.log("preload " .. p .. " " .. tostring(ok))
     end
 end

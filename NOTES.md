@@ -26,10 +26,20 @@ runs Lua on the game thread, `--async` first line runs it off-thread. Output in
   Treat a job as finished only ~0.2 s after it returned; jobs can also be dropped (title).
 - Never touch game objects from the async thread: RegisterKeyBind callbacks run there too, so
   keys only queue work.
-- So the mod now runs all per-frame work inside game Blueprint ticks (main.lua frame(): hooked
-  BP_PolarisEffectManager / StageEffectManager / ItemEffectManager ReceiveTick and
-  WBP_UI_InformationBar Tick, throttled to ~35 ms). One LoopAsync (1 s) queues a single
-  ExecuteInGameThread job for preload, class scan and hook registration.
+- ExecuteInGameThread from the async thread at all: it waits for a lock the game thread holds
+  while it runs a Lua hook, which waits for the Lua lock the async thread holds. With per-frame
+  hooks this hung the game within minutes (second "fatal error"). Not used anywhere now.
+- So: one bootstrap LoopAsync registers WBP_UI_InformationBar_C:OnSetMessage (fires only on
+  screen/help changes) and stops. Everything else runs in game-thread hooks: frame() (hooked
+  EffectManager/StageEffectManager/ItemEffectManager ReceiveTick, InformationBar Tick; ~35 ms)
+  and maint() (1 s: RegisterHook for loaded classes, preload, scans). RegisterHook from inside a
+  hook callback for a different function works; never for the function being dispatched.
+- FindFirstOf/FindAllOf cost 10-26 ms (a whole frame) and StaticFindObject 0.2 ms: in fights
+  nothing searches. Fight detection = WBP_UI_HUD_S2_C:Tick hook; menu widgets come from their
+  hooks; fighters/ball/PlayerController searched once per fight; scans only after menu activity;
+  check_pending looks at 12 generic classes per second plus the fixed ones. Measured in a fight:
+  Fight.tick 0.1 ms, subtitles 0.08 ms (were 5 ms with 70 ms spikes, and 15 ms). The user had
+  felt this as major slowdown in fights.
 - Do not call ExecuteInGameThread from inside a hook callback (froze); use Menus.defer (run by
   frame()).
 - Hooking every function of a screen (tools\discover_all.lua) can break that screen (input

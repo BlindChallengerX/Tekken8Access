@@ -98,6 +98,7 @@ local function frame()
     step("subtitles", Watch.subtitles)
     step("fight", Fight.tick)
     if Dev then step("dev", Dev.poll) end
+    if A11Y_MAINT then A11Y_MAINT() end
 end
 
 -- Per-frame Blueprint events: the effect managers tick in menus and battles,
@@ -111,43 +112,50 @@ local FRAME_HOOKS = {
 }
 for _, p in ipairs(FRAME_HOOKS) do Menus.add_pending(p, frame) end
 
--- Hook registration (and loading the screens we hook) happens in one
--- game-thread job, never inside a hook callback and never on the async thread:
+-- Maintenance: register hooks for classes that have loaded, load the screens
+-- we hook, look for new widget classes and the subtitle widget. Runs on the
+-- game thread from inside the mod's hooks (frame() and the bootstrap hook),
+-- at most once a second. Never on UE4SS's async thread:
 --   * RegisterHook from the async thread, on a function the game thread was
---     running that frame, crashed UE4SS (access violation in hook dispatch);
---   * a second ExecuteInGameThread while one was queued or running
---     deadlocked UE4SS, so only one job exists at a time, and it counts as
---     finished only a little after it returned (UE4SS still holds its queue
---     lock then). A job that never ran in 30 s is taken as dropped.
--- It is queued once a second whatever the frame hooks do (they do not tick on
--- every screen). This loop itself touches no game objects.
-local job_queued, job_done_at, job_since = false, nil, 0
-A11Y_JOB = { queued = 0, ran = 0 }        -- for the dev console
-LoopAsync(1000, function()
+--     running, crashed UE4SS (access violation in hook dispatch);
+--   * ExecuteInGameThread from the async thread waits for a lock the game
+--     thread holds while it runs a Lua hook, and that hook waits for the Lua
+--     lock the async thread holds: the game hung (user saw "fatal error").
+-- Searches cost a frame or more (FindFirstOf 10-25 ms, a class scan ~36 ms),
+-- so none happen in a fight, and scans only right after menu activity.
+local last_maint, preload_done, last_scan, last_sub_find = -10, false, -10, -10
+local function maint()
     local t = os.clock()
-    if job_queued then
-        if job_done_at then
-            if t - job_done_at < 0.2 then return false end
-        elseif t - job_since < 30 then
-            return false
-        end
-        job_queued, job_done_at = false, nil
+    if t - last_maint < 1.0 then return end
+    last_maint = t
+    Menus.check_pending()
+    if Menus.pending_ready then Menus.register_pending() end
+    if Fight.active() then return end
+    if not preload_done and t - Menus.last_menu_t < 3 then
+        local mm = FindFirstOf("WBP_UI_MainMenu_C")
+        if UI.shown(mm) then Menus.preload(); preload_done = true end
     end
-    job_queued, job_done_at, job_since = true, nil, t
-    A11Y_JOB.queued = A11Y_JOB.queued + 1
-    local ok = pcall(ExecuteInGameThread, function()
-        A11Y_JOB.ran = A11Y_JOB.ran + 1
-        pcall(function()
-            if not Fight.active() and UI.shown(FindFirstOf("WBP_UI_MainMenu_C")) then Menus.preload() end
-            -- new widget classes every two seconds (in a fight only while a
-            -- pause or practice menu is open)
-            if A11Y_JOB.ran % 2 == 0 and (not Fight.active() or Fight.menu_open()) then Menus.scan_classes() end
-            Menus.check_pending()
-            if Menus.pending_ready then Menus.register_pending() end
-        end)
-        job_done_at = os.clock()
-    end)
-    if not ok then job_queued = false end
+    if t - Menus.last_menu_t < 3 and t - last_scan > 5 then last_scan = t; Menus.scan_classes() end
+    if not Watch.has_subtitle_widget() and t - last_sub_find > 10 and t - Menus.last_menu_t < 3 then
+        last_sub_find = t
+        Watch.find_subtitle_widget()
+    end
+end
+A11Y_MAINT = function() step("maint", maint) end
+
+-- Bootstrap: one hook on the information bar's message (it fires when a
+-- screen or help line changes, not every frame), registered from the async
+-- thread before any of the mod's hooks exist; the loop then stops for good.
+-- Its callback runs maintenance, which hooks the per-frame ticks.
+local BOOT = "/Game/UI/Widget/Elements/WBP_UI_InformationBar.WBP_UI_InformationBar_C:OnSetMessage"
+LoopAsync(500, function()
+    if pcall(RegisterHook, BOOT, function(ctx)
+        step("info bar", function() Menus.on_info_bar(ctx) end)
+        step("maint", maint)
+    end) then
+        print("[A11y] boot hook on\n")
+        return true
+    end
     return false
 end)
 

@@ -16,7 +16,9 @@ local UI  = require("lib/ui")
 local Watch = {}
 local safe = UI.safe
 
-local jb, next_find = nil, 0
+-- the Jukebox screen widget is handed over by its hooks (menus.lua sets
+-- Watch.jb); searching for it costs a whole frame
+Watch.jb = nil
 local last = {}
 
 local function shown(w) return w and UI.valid(w) and safe(function() return w:IsVisible() end) == true end
@@ -55,7 +57,7 @@ local function list_item_text(lv, i, reader)
 end
 
 local function jacket_text(i)
-    local info = safe(function() return jb.play_list_infos[i + 1] end)
+    local info = safe(function() return Watch.jb.play_list_infos[i + 1] end)
     if not info then return nil end
     local name = UI.clean(UI.loc(safe(function() return info.textId:ToString() end) or "")) or ("Playlist " .. (i + 1))
     if safe(function() return info.Unlocked end) == false then name = name .. ", locked" end
@@ -81,11 +83,10 @@ local function watch_list(key, win, reader, title_field)
 end
 
 local function jukebox(t)
-    if not shown(jb) then
-        if t < next_find then return end
-        next_find = t + 1.0
-        jb = safe(function() return FindFirstOf("WBP_UI_JukeBox_C") end)
-        if not (jb and UI.shown(jb)) then jb = nil; last = {} return end
+    local jb = Watch.jb
+    if not (jb and UI.valid(jb) and UI.shown(jb)) then
+        if next(last) then last = {} end
+        return
     end
     -- the carousel only counts while no window is open over it
     local win_open = shown(safe(function() return jb.WBP_UI_JukeBox_BgmWin end))
@@ -119,23 +120,55 @@ function Watch.tick()
     jukebox(t)
 end
 
--- Story / cutscene subtitles: WBP_UI_Subtitle_C creates its lines as child
--- widgets. Read what it shows and speak each new line (interrupting the last,
--- as a sighted player only sees the newest). Hooking CreateFrontSubtitle froze
--- Lua when it fired during a loading screen, so this polls one cached widget.
-local sub, sub_next, sub_last = nil, 0, ""
+-- Story / cutscene subtitles: WBP_UI_Subtitle_C shows its lines as child
+-- widgets of CanvasPanel_31. Hooking CreateFrontSubtitle froze Lua during a
+-- loading screen, so this polls, cheaply: the widget is found once (main.lua
+-- maintenance), its line widgets and their text blocks are collected only
+-- when the number of lines changes, and each tick just reads those texts.
+-- Each new line is spoken, interrupting the last (a sighted player only sees
+-- the newest).
+local sub, sub_n, sub_texts, sub_last = nil, -1, {}, ""
+function Watch.has_subtitle_widget() return sub ~= nil and UI.valid(sub) end
+function Watch.find_subtitle_widget()
+    local w = safe(function() return FindFirstOf("WBP_UI_Subtitle_C") end)
+    if w and UI.valid(w) then sub, sub_n = w, -1 end
+end
+
+local function text_blocks(w, out, depth)
+    depth = depth or 0
+    if depth > 12 or not UI.valid(w) then return out end
+    if safe(function() return w:GetText() end) ~= nil then out[#out + 1] = w end
+    local wt = safe(function() return w.WidgetTree end)
+    if wt and UI.valid(wt) then local r = safe(function() return wt.RootWidget end); if r then text_blocks(r, out, depth + 1) end end
+    local n = safe(function() return w:GetChildrenCount() end) or 0
+    for i = 0, n - 1 do local ch = safe(function() return w:GetChildAt(i) end); if ch then text_blocks(ch, out, depth + 1) end end
+    return out
+end
+
 function Watch.subtitles()
     local M = package.loaded["menus"]
     if M and M.subtitles == false then return end
-    local t = os.clock()
-    if not (sub and UI.valid(sub)) then
-        if t < sub_next then return end
-        sub_next = t + 1.0
-        sub = safe(function() return FindFirstOf("WBP_UI_Subtitle_C") end)
-        if not (sub and UI.valid(sub)) then sub = nil return end
+    if not (sub and UI.valid(sub)) then sub = nil return end
+    local cv = safe(function() return sub.CanvasPanel_31 end)
+    local n = cv and safe(function() return cv:GetChildrenCount() end) or 0
+    if n ~= sub_n then
+        sub_n, sub_texts = n, {}
+        for i = 0, n - 1 do
+            local line = safe(function() return cv:GetChildAt(i) end)
+            if line then sub_texts[#sub_texts + 1] = { line = line, blocks = text_blocks(line, {}) } end
+        end
     end
-    if not shown(sub) then sub_last = "" return end
-    local line = UI.read(sub)
+    if n == 0 or not safe(function() return sub:IsVisible() end) then sub_last = "" return end
+    local parts = {}
+    for _, e in ipairs(sub_texts) do
+        if safe(function() return e.line:IsVisible() end) then
+            for _, b in ipairs(e.blocks) do
+                local s = UI.clean(UI.text_of(b))
+                if s and s ~= "" then parts[#parts + 1] = s end
+            end
+        end
+    end
+    local line = table.concat(parts, " ")
     if line == "" then sub_last = "" return end
     if line ~= sub_last then
         sub_last = line

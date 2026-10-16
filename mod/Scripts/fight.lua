@@ -21,7 +21,7 @@ Fight.beacon = true
 local f = { [0] = nil, [1] = nil }
 local pc = nil
 local active = false
-local next_find, next_menu_check, next_hp = 0, 0, 0
+local next_find, next_menu_check, next_hp, next_pc = 0, 0, 0, 0
 local menu_open = false
 local hp = { [0] = 100, [1] = 100 }
 local match_key = nil
@@ -38,30 +38,28 @@ end
 
 local function ok_fighters() return UI.valid(f[0]) and UI.valid(f[1]) end
 
--- character select also has PolarisCharacterActors; a fight has the battle HUD
-local HUDS = { "WBP_UI_HUD_S2_C", "WBP_UI_HUD_C" }
-local hud = nil
-local function hud_up()
-    if UI.valid(hud) and UI.shown(hud) then return true end
-    hud = nil
-    for _, n in ipairs(HUDS) do
-        local w = safe(function() return FindFirstOf(n) end)
-        if w and UI.shown(w) then hud = w; return true end
+-- FindFirstOf / FindAllOf cost 10-26 ms each here (a whole frame), so the
+-- fight loop never searches: the battle HUD's Blueprint Tick (hooked in
+-- menus.lua) says a fight is on screen, and menus hand over the widgets they
+-- see in their hooks. Fighters and the ball are searched once per fight.
+local hud_t = -10
+function Fight.on_hud_tick() hud_t = os.clock() end
+local function hud_up() return os.clock() - hud_t < 0.5 end
+
+-- a pause / practice menu / move list on screen: mute the beacon. The widgets
+-- come from their hooks (Fight.saw_menu). The in-match pause menu,
+-- WBP_UI_Pause_C, is nested: it is never "in viewport", only its visibility
+-- changes, so for it the visibility is checked.
+local menus = {}
+function Fight.saw_menu(kind, w) if UI.valid(w) then menus[kind] = w end end
+local function any_menu()
+    for kind, w in pairs(menus) do
+        if not UI.valid(w) then menus[kind] = nil
+        elseif kind == "pause" then
+            if safe(function() return w:IsVisible() end) then return true end
+        elseif UI.shown(w) then return true end
     end
     return false
-end
-
--- a pause / practice menu / move list on screen: mute the beacon
--- (the in-match pause menu, WBP_UI_Pause_C, is nested in another widget: it
--- is never "in viewport", only its visibility changes)
-local MENUS = { "WBP_UI_PracticeMenu_C", "WBP_UI_CommandList_C" }
-local function any_menu()
-    for _, n in ipairs(MENUS) do
-        local w = safe(function() return FindFirstOf(n) end)
-        if w and UI.shown(w) then return true end
-    end
-    local p = safe(function() return FindFirstOf("WBP_UI_Pause_C") end)
-    return p ~= nil and UI.valid(p) and safe(function() return p:IsVisible() end) == true
 end
 
 local function name(n)
@@ -105,8 +103,11 @@ local function health()
     end
 end
 
--- Tekken Ball: the ball in play is a visible PolarisBallActor
-local ball, next_ball, ball_sent = nil, 0, false
+-- Tekken Ball: the ball in play is a visible PolarisBallActor. Searched a few
+-- times after a fight starts (1, 3, 6 s); in a match that has one, again
+-- every 3 s while it is missing (between rounds). Other matches stop looking.
+local ball, ball_sent, ball_mode, ball_tries, next_ball = nil, false, false, 0, 0
+local BALL_TRIES = { 1, 2, 3 }
 Fight.ball_cue = true
 Fight.ball_info = nil       -- last { d = cm, h = cm, side = "left"/"right" } for F5
 
@@ -122,9 +123,18 @@ end
 -- floor height is about 100 cm below a standing fighter's actor origin
 local function ball_frame(a, c, s)
     local t = os.clock()
-    if t >= next_ball then
-        next_ball = t + 1.0
-        if not (UI.valid(ball) and safe(function() return ball.IsVisibleActor end)) then find_ball() end
+    if t >= next_ball and not (UI.valid(ball) and safe(function() return ball.IsVisibleActor end)) then
+        if ball_mode then
+            next_ball = t + 3
+            find_ball()
+        elseif ball_tries < #BALL_TRIES then
+            ball_tries = ball_tries + 1
+            next_ball = t + BALL_TRIES[ball_tries] + 1
+            find_ball()
+            if ball then ball_mode = true end
+        else
+            next_ball = math.huge
+        end
     end
     local l = ball and safe(function() return ball:K2_GetActorLocation() end)
     if not l or not Fight.ball_cue then
@@ -145,7 +155,11 @@ local function frame()
     local a = safe(function() return me:K2_GetActorLocation() end)
     local b = safe(function() return op:K2_GetActorLocation() end)
     if not a or not b then return end
-    if not UI.valid(pc) then pc = FindFirstOf("PlayerController") end
+    if not UI.valid(pc) then
+        if os.clock() < next_pc then return end
+        next_pc = os.clock() + 2
+        pc = FindFirstOf("PlayerController")
+    end
     local yaw = safe(function() return pc.PlayerCameraManager:GetCameraRotation().Yaw end) or 0
     local r = math.rad(yaw)
     local c, s = math.cos(r), math.sin(r)
@@ -157,27 +171,32 @@ local function frame()
     ball_frame(a, c, s)
 end
 
--- game thread
+-- game thread. Nothing here searches every tick: the HUD tick says a fight
+-- is on, fighters are looked up when it starts (and at most every 2 s while
+-- they are missing).
+local function stop()
+    if active then active = false; Out.send("F0"); Out.send("BL0") end
+end
+
 function Fight.tick()
     local t = os.clock()
+    if not hud_up() then stop() return end
     if not ok_fighters() then
-        if active then active = false; Out.send("F0"); Out.send("BL0") end
+        stop()
         if t < next_find then return end
-        next_find = t + 1.0
+        next_find = t + 2.0
         find_fighters()
         if not ok_fighters() then return end
     end
     if t >= next_menu_check then
         next_menu_check = t + 0.3
         menu_open = any_menu()
-        if not hud_up() then
-            if active then active = false; Out.send("F0"); Out.send("BL0") end
-            return
-        end
-    elseif not active then
-        return
     end
-    if not active then active = true; start() end
+    if not active then
+        active = true
+        ball, ball_mode, ball_tries, next_ball = nil, false, 0, t + 1
+        start()
+    end
     if t >= next_hp then next_hp = t + 0.2; health() end
     if menu_open then Out.send("F0"); Out.send("BL0"); ball_sent = false return end
     frame()
