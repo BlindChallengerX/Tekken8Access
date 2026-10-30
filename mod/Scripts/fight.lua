@@ -8,6 +8,23 @@
 
   Fighters are PolarisCharacterActor with PlayerNumber 0 (player 1) and 1.
   The practice dummy has PlayerNumber 2 and is ignored.
+
+  Which fighter is "me": the side picked on side select; online (no side
+  select) the side whose online ID on the fight HUD is the player's own. The
+  mod learns that name in offline fights, where the side is known, and keeps
+  it in own_name.txt.
+
+  Throw break cue: when the opponent starts a throw, PolarisBlueprintLibrary
+  says it is attacking with damage value 16384 (bit 0x4000). Nothing it
+  exposes tells which break the throw needs: the attacking bone is the
+  grabbing hand (13 left, 9 right), and 1+2 command throws grab with the left
+  hand like 1+3 throws. Tested in Throw Escape Training: a plain 1+3 or 2+4
+  throw breaks with 1 or 2 (the game shows "1 or 2"); 1+2 does not break it,
+  nor does rolling 1 into 1+2 break a 1+2 throw. So in matches every throw
+  plays the "press 1" cue. In Practice the tips panel
+  (WBP_UI_Practice_S2_C.WBP_UI_Practice_TIPS.TB_Command) shows the escape
+  ("Throw escape 1 or 2" / "1+2") the moment the grab connects, ~0.2 s after
+  the start: there the cue waits for it and plays the exact one.
 ]]
 local Out = require("out")
 local UI  = require("lib/ui")
@@ -26,24 +43,40 @@ local menu_open = false
 local hp = { [0] = 100, [1] = 100 }
 local match_key = nil
 
+-- In Combo Challenges the dummy is PlayerNumber 2 and player 2's fighter is
+-- hidden: then the dummy stands in for player 2.
 local function find_fighters()
     f[0], f[1] = nil, nil
     local arr = FindAllOf("PolarisCharacterActor")
     if type(arr) ~= "table" then return end
+    local dummy = nil
     for _, a in ipairs(arr) do
-        local n = safe(function() return a.PlayerNumber end)
-        if (n == 0 or n == 1) and safe(function() return a.IsVisibleActor end) then f[n] = a end
+        local n = UI.valid(a) and safe(function() return a.PlayerNumber end)
+        if n and safe(function() return a.IsVisibleActor end) then
+            if n == 0 or n == 1 then f[n] = a elseif n == 2 then dummy = a end
+        end
     end
+    if not f[1] then f[1] = dummy end
 end
 
 local function ok_fighters() return UI.valid(f[0]) and UI.valid(f[1]) end
+-- a combo challenge started or ended (menus.lua): the fighters swap, so
+-- look again. Not on every visibility change: fighters hide and reappear
+-- while a fight loads, and searching then (actors being built or torn
+-- down) is what took the game down on 2026-10-29.
+local refind = false
+function Fight.refind() refind = true end
 
 -- FindFirstOf / FindAllOf cost 10-26 ms each here (a whole frame), so the
 -- fight loop never searches: the battle HUD's Blueprint Tick (hooked in
 -- menus.lua) says a fight is on screen, and menus hand over the widgets they
 -- see in their hooks. Fighters and the ball are searched once per fight.
 local hud_t = -10
-function Fight.on_hud_tick() hud_t = os.clock() end
+local hud_w = nil
+function Fight.on_hud_tick(ctx)
+    hud_t = os.clock()
+    if ctx and not UI.valid(hud_w) then hud_w = safe(function() return ctx:get() end) end
+end
 local function hud_up() return os.clock() - hud_t < 0.5 end
 
 -- a pause / practice menu / move list on screen: mute the beacon. The widgets
@@ -67,12 +100,86 @@ local function name(n)
     return D.fighters[id] or (n == Fight.me and "You" or "Opponent")
 end
 
+-- PolarisBlueprintLibrary: sides, attacks (StaticFindObject once, 0.2 ms)
+local lib = nil
+local function L()
+    if not UI.valid(lib) then lib = StaticFindObject("/Script/Polaris.Default__PolarisBlueprintLibrary") end
+    return lib
+end
+
+-- the player's own online ID, learned offline
+local own_name = nil
+local function own_file() return Fight.dir and (Fight.dir .. "\\own_name.txt") end
+local function load_own()
+    local f = own_file() and io.open(own_file(), "r")
+    if f then own_name = (f:read("l") or ""):match("^%s*(.-)%s*$"); f:close() end
+    if own_name == "" then own_name = nil end
+end
+local function save_own(n)
+    own_name = n
+    local f = own_file() and io.open(own_file(), "w")
+    if f then f:write(n, "\n"); f:close() end
+end
+load_own()
+
+local function hud_names()
+    local p = safe(function() return hud_w.WBP_UI_HUD_Gauge_S2.WBP_UI_HUD_Player_S2 end)
+    if not UI.valid(p) then return nil end
+    local function t(n) return UI.clean(UI.text_of(safe(function() return p[n] end)) or "") end
+    return t("TB_OnlIneID_L2"), t("TB_OnlIneID_R2")
+end
+
+-- PolarisBlueprintLibrary is native and does not check its player id: called
+-- while a fight loads, or for player 2 in a combo challenge (where that
+-- player is hidden and the dummy is PlayerNumber 2), it took the game down
+-- with no crash report (three times on 2026-10-29). So it is only asked
+-- once both real fighters are up and the round is set up (health read).
+local function lib_safe()
+    return hp[0] and hp[1]
+        and safe(function() return f[0].PlayerNumber == 0 and f[1].PlayerNumber == 1 end) == true
+end
+
+local function pn_for_side(side)
+    for n = 0, 1 do
+        if safe(function() return L():GetSideByPlayerID(n) end) == side then return n end
+    end
+    return side
+end
+
+-- decide which fighter is me; true once settled. Retried for a few seconds
+-- after the fight starts, since the HUD fills in the names during the intro.
+local side_known, side_tries, next_side = false, 0, 0
+local function resolve_side()
+    local M = package.loaded["menus"]
+    local picked = M and M.side
+    local l, r = hud_names()
+    local side
+    if picked then
+        side = picked
+        local mine, other = (side == 0 and l or r), (side == 0 and r or l)
+        if mine and mine ~= "" and mine ~= other and mine ~= own_name then
+            save_own(mine)
+            Out.log("own name learned: " .. mine)
+        end
+    elseif l and own_name and (l == own_name or r == own_name) and l ~= r then
+        side = l == own_name and 0 or 1
+        if side == 1 then Out.queue("You are on the right.") end
+    elseif l and (l ~= "") ~= (r ~= "") then
+        side = l ~= "" and 0 or 1      -- versus the CPU: only the player has a name
+    end
+    if side then Fight.me = pn_for_side(side) end
+    return side ~= nil
+end
+
 local function start()
     hp[0], hp[1] = nil, nil      -- health reads 0 until the round is set up
+    tips = nil
     local M = package.loaded["menus"]
     Fight.me = (M and M.side) or 0
+    side_known, side_tries, next_side = false, 0, 0
     local key = tostring(safe(function() return f[0].FighterId end)) .. ":" .. tostring(safe(function() return f[1].FighterId end))
-    if key ~= match_key then
+    local challenge = safe(function() return f[1].PlayerNumber end) == 2
+    if key ~= match_key and not challenge then
         match_key = key
         local me, op = Fight.me, 1 - Fight.me
         -- story mode uses fighter versions with their own ids (not on the
@@ -150,6 +257,60 @@ local function ball_frame(a, c, s)
     Out.send(string.format("BL\t%.1f\t%.1f\t%.1f\t%.1f", screen, depth, h, d))
 end
 
+-- opponent throw start -> "T throw1/throw2/throw12" once per throw
+Fight.throws = true
+local throw_on = false
+local tips = nil           -- Practice tips panel, looked up once per fight
+local tip_wait = nil       -- os.clock() deadline while waiting for the tip
+
+-- The panel can stay up between throws with dimmed icons (cmd_20d); the
+-- icons light up (cmd_20) when the grab connects: that is the current throw.
+local function tip_cue()
+    local raw = UI.valid(tips) and safe(function() return tips:IsVisible() end)
+        and UI.text_of(safe(function() return tips.TB_Command end))
+    if not raw or not raw:find('cmd_%d+"') then return nil end
+    local t = UI.clean(raw)
+    if not t or not t:find("^Throw escape") then return nil end
+    if t:find("1%+2") then return "throw12" end
+    if t:find(" or ") or t:find(" 1$") then return "throw1" end
+    if t:find(" 2$") then return "throw2" end
+    return "throw1"
+end
+
+local function throws()
+    local op = 1 - Fight.me
+    local lb = L()
+    local dmg = safe(function() return lb:GetFighterAttackingDamageValue(op) end)
+    local is_throw = type(dmg) == "number" and math.floor(dmg / 16384) % 2 == 1
+        and safe(function() return lb:IsFighterAttackingMot(op) end) == true
+    if is_throw and not throw_on and Fight.throws then
+        -- Practice: the tips panel tells the escape (menus.lua finds the
+        -- Practice HUD when the pause menu is used)
+        if not UI.valid(tips) then
+            local M = package.loaded["menus"]
+            local ps = M and M.practice_hud
+            tips = UI.valid(ps) and safe(function() return ps.WBP_UI_Practice_TIPS end) or nil
+        end
+        local raw = UI.valid(tips) and safe(function() return tips:IsVisible() end)
+            and UI.text_of(safe(function() return tips.TB_Command end))
+        if raw and raw:find("^Throw escape") then      -- Throw Escape Training
+            tip_wait = os.clock() + 0.45
+        else
+            Out.send("T\tthrow1")
+            Out.log("throw")
+        end
+    end
+    throw_on = is_throw
+    if tip_wait then
+        local cue = tip_cue()
+        if cue or os.clock() > tip_wait then
+            tip_wait = nil
+            Out.send("T\t" .. (cue or "throw1"))
+            Out.log("throw (practice tip) " .. tostring(cue))
+        end
+    end
+end
+
 local function frame()
     local me, op = f[Fight.me], f[1 - Fight.me]
     local a = safe(function() return me:K2_GetActorLocation() end)
@@ -175,12 +336,20 @@ end
 -- is on, fighters are looked up when it starts (and at most every 2 s while
 -- they are missing).
 local function stop()
-    if active then active = false; Out.send("F0"); Out.send("BL0") end
+    if active then
+        active = false
+        -- drop the Practice HUD too: a later match must not use a widget
+        -- from a screen that is gone
+        tips, tip_wait = nil, nil
+        local M = package.loaded["menus"]; if M then M.practice_hud = nil end
+        Out.send("F0"); Out.send("BL0")
+    end
 end
 
 function Fight.tick()
     local t = os.clock()
     if not hud_up() then stop() return end
+    if refind then refind = false; f[0], f[1], next_find = nil, nil, 0 end
     if not ok_fighters() then
         stop()
         if t < next_find then return end
@@ -197,7 +366,12 @@ function Fight.tick()
         ball, ball_mode, ball_tries, next_ball = nil, false, 0, t + 1
         start()
     end
+    if not side_known and side_tries < 20 and t >= next_side and lib_safe() then
+        side_tries, next_side = side_tries + 1, t + 0.5
+        side_known = resolve_side()
+    end
     if t >= next_hp then next_hp = t + 0.2; health() end
+    if not menu_open and lib_safe() then throws() end
     if menu_open then Out.send("F0"); Out.send("BL0"); ball_sent = false return end
     frame()
 end
@@ -225,6 +399,11 @@ end
 function Fight.toggle_beacon()
     Fight.beacon = not Fight.beacon
     Out.say(Fight.beacon and "Opponent beacon on" or "Opponent beacon off", true)
+end
+
+function Fight.toggle_throws()
+    Fight.throws = not Fight.throws
+    Out.say(Fight.throws and "Throw break sounds on" or "Throw break sounds off", true)
 end
 
 function Fight.toggle_ball()

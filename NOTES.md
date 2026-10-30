@@ -5,7 +5,9 @@
 - `helper/` - TekkenA11yHelper.exe (C, 64-bit w64devkit): named pipe `\\.\pipe\TekkenA11y`,
   Prism speech (speech.c from SC2 Access), waveOut synth (audio.c from SC2), beacon.c.
 - `build.sh` (Git Bash) -> `out/TekkenA11y`; `deploy.ps1` copies into the game's Mods folder.
-- `tools/` - t8.py (dev console client, keys, screenshots, boot/flow helpers), lat.py
+- `tools/` - t8.py (bot: dev console, keys, screenshots; `boot`, `practice [right]`,
+  `pmenu "<row>"`, `state`; every step checks the screen or the mod's speech and stops with
+  BotError instead of pressing on; the window is found by the game's process), lat.py
   (key-to-SAY latency), flow.py (main menu -> practice match), discover.lua (hook every
   hover-like Blueprint function and log calls), sweep_names.py, icon_rows.py, restart.ps1.
 - `old-v0.6/` - the June build this replaces (file outbox + external speaker, polling).
@@ -103,6 +105,55 @@ bottom 3, right 4. kbd_NNN_en_US are keyboard key pictures (key unknown -> "keyb
   (-sin, cos). Opponent depth = (op - me) . camera forward / distance.
 - "Me" = the side picked on side select (left = PlayerNumber 0, right = 1), else 0.
 - Verified 2026-10-16: sidestep down (toward camera) -> depth +0.41 -> level +1 (higher).
+
+## Side detection and throws (0.7.1, 2026-10-29)
+- `/Script/Polaris.Default__PolarisBlueprintLibrary` (StaticFindObject once) takes a player id
+  (= PlayerNumber 0/1): GetSideByPlayerID, GetTargetPlayerID, GetFighterIDByPlayerID,
+  IsFighterAttackingMot, GetFighterAttackingDamageValue, GetFighterAttackingBone. GetMotName
+  returns garbage. Two calls cost 0.01 ms.
+- Me: side select (Menus.side) if picked; else the HUD online IDs
+  `WBP_UI_HUD_S2_C.WBP_UI_HUD_Gauge_S2.WBP_UI_HUD_Player_S2.TB_OnlIneID_L2 / _R2` compared with
+  own_name.txt (learned in any offline fight with a picked side); else the only non-empty name
+  (vs CPU). Retried every 0.5 s for 10 s after the fight starts. Verified in Practice from both
+  sides and with faked online names; not yet in a real online match.
+- Throws: damage value has bit 0x4000 (16384) for every throw while it starts; the bone is the
+  grabbing hand (13 left, 9 right) and 1+2 command throws grab with 13 too, so the break is not
+  in anything the library exposes. Tested in Throw Escape Training (2026-10-29, Kazuya, health
+  as the judge): plain 1+3 / 2+4 break with 1 (or 2) pressed ~0.15-0.45 s after the start; 1+2
+  does not break them; rolling 1 into 1+2 breaks plain throws but not 1+2 throws. So in
+  matches every throw plays "throw1".
+- Practice: WBP_UI_Practice_S2_C.WBP_UI_Practice_TIPS.TB_Command = "Throw escape <cmd_20> or
+  <cmd_21>" / "<cmd_22>". Between throws the panel can stay up with dimmed icons (cmd_20d); the
+  icons light up when the grab connects (~0.2 s after the start). The cue waits for lit icons
+  (0.45 s limit). The Practice HUD is found when the pause menu is used (menus.lua,
+  Menus.practice_hud) and dropped when the fight stops. F2 toggles the cues (F10 opens the
+  UE4SS ConsoleEnabler console).
+- Throw Escape / Punishment Training menu: WBP_UI_CounterPractice_C SetCurrentTab(i) = left
+  column (difficulty, Win.VerticalBox_DifficultyButton TB_Menu_ON), SetCursorIndex(i) = right
+  (Win.ScrollBox_Command, _Command_C TB_Number/TB_name/TB_Command; T_UI_CheckMark Hidden = off),
+  SetActiveLayer(0/1). All three fire on open (merged into one reading). TB_Note is placeholder
+  text. Enter on the left column starts the training; B in training opens this screen. The
+  pause menu replays its row (cursor hooks and the help-bar fallback) while it is open: muted.
+
+## Combo Challenges (2026-10-29)
+- List: `WBP_UI_ComboChallenge_C:SetCursorIndex(i)`; items in Win.ListView_Challenge
+  (BP_ComboChallenge_Button_Item_C {Text id, checked}); steps = visible
+  WBP_UI_ComboChallenge_Command_C children of Win.VerticalBox_Command (Command_1..5 are hidden
+  placeholders), TB_Command rich text, read 0.1 s after the cursor; TB_Damage_2, TB_Note,
+  difficulty = highest visible T_UI_PL_Difficulty_N. Start = PlayAnimDecide (OnDecide never fires).
+- In a challenge: WBP_UI_Practice_ComboChallenge_C (TB_Challenge, VerticalBox_Command of _Line_C,
+  TB_Command_ON). Current step loops Anim_Hover, landed step plays Anim_Completed, a drop moves
+  the hover back to row 1; no BP event fires, so rows are polled every 50 ms (IsAnimationPlaying).
+  Clear detection (last row Completed) not yet seen in game.
+- CRASH: polling row widgets kept from before the challenge list (B) was opened killed the game
+  ~8 s later, no crash report (reproduced 3 times, gone with the poll off). Now no row is kept
+  between polls and the panel is dropped while any menu is open, then searched once after.
+- In a challenge player 2's fighter is hidden and the dummy is PlayerNumber 2: Fight uses it as
+  the opponent (Fight.refind() on challenge start/end); PolarisBlueprintLibrary is only called
+  once fighters 0 and 1 are up and health has been read (lib_safe).
+- Star icon cmd_35 = "n" (neutral), e.g. f, n, d, d/f+2.
+- Esc from the challenge list leaves the challenge (back to free practice).
+- Dev console: never walk every property of a big widget (WBP_UI_Practice_S2_C froze the game).
 
 ## Testing notes
 - Keyboard in fights belongs to whichever device pressed a button at the title. If a

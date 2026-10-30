@@ -1,5 +1,5 @@
 --[[
-  TekkenA11y 0.7.0 - screen reader and audio cues for Tekken 8 (UE4SS Lua mod)
+  TekkenA11y 0.7.1 - screen reader and audio cues for Tekken 8 (UE4SS Lua mod)
 
   Speech and sounds come from speaker\TekkenA11yHelper.exe (Prism + a small
   synth), fed through a named pipe, so there is no file polling between a
@@ -8,7 +8,7 @@
 
   Keys: F3 subtitles on/off, F4 Tekken Ball sound on/off, F5 fight status,
         F6 beacon on/off, F7 repeat move with notes, F8 repeat last speech,
-        F9 read screen, F11 speech on/off.
+        F2 throw break sounds on/off, F9 read screen, F11 speech on/off.
 
   Threads: everything that touches the game runs on the game thread, inside
   the game's own per-frame Blueprint ticks (frame() below). UE4SS 3.0.1 hung
@@ -23,9 +23,10 @@ local Out   = require("out")
 local UI    = require("lib/ui")
 local Menus = require("menus")
 local Fight = require("fight")
+Fight.dir = MOD_DIR
 local Watch = require("watch")
 
-print("[A11y] TekkenA11y 0.7.0 loading\n")
+print("[A11y] TekkenA11y 0.7.1 loading\n")
 
 -- helper process: one instance, exits with the game
 if MOD_DIR then
@@ -69,6 +70,7 @@ bind("F6", Fight.toggle_beacon)
 bind("F7", Menus.repeat_move)
 bind("F8", function() Out.send("S1\t" .. (Out.last ~= "" and Out.last or "Nothing yet.")) end)
 bind("F9", read_screen)
+bind("F2", Fight.toggle_throws)
 bind("F11", function()
     Out.enabled = not Out.enabled
     Out.send("S1\t" .. (Out.enabled and "Speech on" or "Speech off"))
@@ -97,6 +99,7 @@ local function frame()
     if not Fight.active() then step("watch", Watch.tick) end
     step("subtitles", Watch.subtitles)
     step("fight", Fight.tick)
+    step("challenge", Menus.challenge_tick)
     if Dev then step("dev", Dev.poll) end
     if A11Y_MAINT then A11Y_MAINT() end
 end

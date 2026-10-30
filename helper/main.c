@@ -7,7 +7,8 @@
  *   F<tab>numbers   fight frame for the beacon (see beacon.c)
  *   F0              fight over: beacon silent
  *   BL<tab>numbers  Tekken Ball: screen depth height dist (beacon.c)   BL0 stop
- *   T<tab>name      UI sound (edge, ...)
+ *   T<tab>name      UI sound (edge, ...), throw break cue (throw1, throw2, throw12),
+ *                   combo challenge (stepN, drop, clear)
  *   C<tab>key<tab>v config value
  *   L<tab>text      write text to the log
  *
@@ -19,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <tlhelp32.h>
 
 wchar_t g_mod_dir[MAX_PATH];
@@ -56,6 +58,26 @@ static void ui_sound(const char *name) {
     if (!strcmp(name, "edge")) tone(220, 200, 0.06f, 0.10f, 0, W_SOFT);
     else if (!strcmp(name, "open")) { tone(440, 440, 0.05f, 0.07f, 0, W_SOFT); tone_at(0.06f, 660, 660, 0.06f, 0.07f, 0, W_SOFT); }
     else if (!strcmp(name, "round")) { tone(330, 330, 0.08f, 0.10f, 0, W_SOFT); tone_at(0.09f, 495, 495, 0.12f, 0.10f, 0, W_SOFT); }
+    /* combo challenge: a step landed (rising with the step number), the combo
+       dropped, the challenge cleared */
+    else if (!strncmp(name, "step", 4)) {
+        int k = atoi(name + 4); if (k < 1) k = 1; if (k > 12) k = 12;
+        float f = 440 * powf(2, (k - 1) * 2 / 12.0f);
+        tone(f, f, 0.05f, 0.12f, 0, W_TRI);
+    }
+    else if (!strcmp(name, "drop")) tone(260, 180, 0.15f, 0.10f, 0, W_SOFT);
+    else if (!strcmp(name, "clear")) {
+        tone(523, 523, 0.10f, 0.14f, 0, W_SOFT); tone_at(0.10f, 659, 659, 0.10f, 0.14f, 0, W_SOFT);
+        tone_at(0.20f, 784, 784, 0.10f, 0.14f, 0, W_SOFT); tone_at(0.30f, 1047, 1047, 0.25f, 0.14f, 0, W_SOFT);
+    }
+    /* opponent's throw is starting: which button breaks it. Reed, louder than
+       the soft beacon ping. 1 (also the cue for plain throws, which 1 or 2
+       break) = one low note; 2 = two quick high notes; 1+2 = a fast high
+       trill of four, so it is not taken for the low note */
+    else if (!strcmp(name, "throw1")) tone(392, 392, 0.14f, 0.20f, 0, W_REED);
+    else if (!strcmp(name, "throw2")) { tone(784, 784, 0.06f, 0.18f, 0, W_REED); tone_at(0.09f, 784, 784, 0.06f, 0.18f, 0, W_REED); }
+    else if (!strcmp(name, "throw12"))
+        for (int i = 0; i < 4; i++) tone_at(i * 0.055f, 1047, 1047, 0.035f, 0.17f, 0, W_REED);
 }
 
 static void handle(char *line) {
@@ -141,7 +163,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     wcscat(logp, L"\\helper.log");
     InitializeCriticalSection(&g_loglock);
     g_log = _wfopen(logp, L"w");
-    log_line("TekkenA11y helper 0.7.0 started");
+    log_line("TekkenA11y helper 0.7.1 started");
 
     speech_init();
     audio_init();

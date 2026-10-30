@@ -25,13 +25,14 @@ end
 
 -- one icon -> { kind = "dir"/"btn"/"word", text = ... }
 local function icon(id)
-    local n = tonumber(id:match("^cmd_(%d+)$"))
+    local n = tonumber(id:match("^cmd_(%d+)d?$"))      -- "d" = the dimmed picture
     if n then
         if DIRS[n] then return { kind = "dir", text = DIRS[n] } end
         if n >= 20 and n <= 34 then return { kind = "btn", text = buttons(n - 19) } end
         if n == 1 then return { kind = "word", text = "bracket" } end
         if n == 2 then return { kind = "word", text = "end bracket" } end
-        if n == 35 then return { kind = "word", text = "star" } end
+        -- the star between directions (f star d d/f+2, Electric) = back to neutral
+        if n == 35 then return { kind = "dir", text = "n" } end
         if n == 38 then return { kind = "word", text = "then" } end
         return { kind = "word", text = "icon " .. n }
     end

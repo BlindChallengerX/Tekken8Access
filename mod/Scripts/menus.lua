@@ -91,6 +91,7 @@ local function practice_fallback()
     if os.clock() - Menus.row_t < 0.4 then return end
     local m = Menus.practice_menu        -- handed over by its cursor hooks (no search)
     if not UI.shown(m) then return end
+    if Menus.subscreen_open and Menus.subscreen_open() then return end
     if any_active(safe(function() return m.ListView_2 end)) then return end
     local col = any_active(safe(function() return m.ListView_1 end)) and 2 or 1
     local i = Menus.pm_last[col]
@@ -112,6 +113,12 @@ local generic_last, generic_t = nil, -1
 local function generic_hover(ctx)
     local w = self_of(ctx)
     if not w then return end
+    -- a Practice sub-screen (Throw Escape / Punishment Training) is open over
+    -- the pause menu: its row replays its hover when the sub-screen changes
+    -- columns; not a move of the user's
+    if Menus.subscreen_open and Menus.subscreen_open()
+        and UI.name(safe(function() return w:GetClass() end)):find("PracticeMenu_Button") then return end
+    if Menus.subscreen_closed then Menus.subscreen_closed() end   -- back on a menu: next open says its title
     local t = UI.read(w)
     if t == "" or (t == generic_last and os.clock() - Menus.last_menu_t < 0.15) then return end
     generic_last, generic_t = t, os.clock()
@@ -260,6 +267,16 @@ local function practice_cursor(layer)
         if not m or type(i) ~= "number" then return end
         saw_menu("practice", m)
         Menus.practice_menu = m
+        -- the Practice HUD (its tips panel tells throw escapes, fight.lua):
+        -- looked up here, in a menu, not in the fight loop
+        if not UI.valid(Menus.practice_hud) then
+            for _, w in ipairs(FindAllOf("WBP_UI_Practice_S2_C") or {}) do
+                if UI.shown(w) then Menus.practice_hud = w; break end
+            end
+        end
+        -- Throw Escape / Punishment Training open over it: the menu refreshes
+        -- its rows when that screen changes columns; stay quiet
+        if Menus.subscreen_open and Menus.subscreen_open() then return end
         if not pm_batch then pm_batch = {}; Menus.defer(practice_flush) end
         pm_batch[layer], pm_menu = i, m
     end
@@ -325,6 +342,292 @@ local function on_movelist_cursor(ctx, index)
     if dmg ~= "" then extra[#extra + 1] = dmg end
     if #extra > 0 then Out.help(table.concat(extra, ". ")) end
     Menus.current_move = { name = name, cmd = cmd, note = note, dmg = dmg }
+end
+
+-- ---------------------------------------------------------------- combo challenges
+-- Practice pause menu > Combo Challenges (WBP_UI_ComboChallenge_C). The list
+-- items (BP_ComboChallenge_Button_Item_C) hold a text id and `checked`
+-- (cleared). The selected challenge's steps are WBP_UI_ComboChallenge_Command_C
+-- rows added to Win.VerticalBox_Command (the five named Command_1..5 are
+-- hidden design placeholders), filled after the cursor moves, so they are
+-- read a moment later. Difficulty = how many T_UI_PL_Difficulty_N show.
+local cc = { count = -1 }
+function Menus.combo_challenge_text(m)
+    local win = safe(function() return m.WBP_UI_ComboChallenge_Win end)
+    if not UI.valid(win) then return nil end
+    local steps = {}
+    local vb = win.VerticalBox_Command
+    local n = safe(function() return vb:GetChildrenCount() end) or 0
+    for k = 0, n - 1 do
+        local c = safe(function() return vb:GetChildAt(k) end)
+        if UI.valid(c) and safe(function() return c:IsVisible() end) then
+            local raw = UI.text_of(safe(function() return c.TB_Command end)) or ""
+            -- "(or <keyboard key picture>)": the keyboard alternative, not readable
+            raw = raw:gsub('%(or%s*<img id="kbd_[^"]*"%s*/>%s*%)', "")
+            local t = UI.clean(raw)
+            if t then steps[#steps + 1] = t end
+        end
+    end
+    local diff = 0
+    for k = 1, 5 do
+        if safe(function() return win["T_UI_PL_Difficulty_" .. k]:IsVisible() end) then diff = k end
+    end
+    local dmg = UI.clean(UI.text_of(safe(function() return win.TB_Damage_2 end)) or "")
+    local note = UI.clean(UI.text_of(safe(function() return win.TB_Note end)) or "")
+    local parts = {}
+    if #steps > 0 then parts[#parts + 1] = table.concat(steps, ", then ") end
+    if diff > 0 then parts[#parts + 1] = "Difficulty " .. diff .. " of 5" end
+    if dmg then parts[#parts + 1] = dmg .. " damage" end
+    if note then parts[#parts + 1] = note end
+    return table.concat(parts, ". ")
+end
+
+local function on_combo_cursor(ctx, index)
+    local m = self_of(ctx)
+    local i = arg(index)
+    if not m or type(i) ~= "number" then return end
+    saw_menu("combochallenge", m)
+    if Menus.drop_challenge_panel then Menus.drop_challenge_panel() end
+    local lv = safe(function() return m.WBP_UI_ComboChallenge_Win.ListView_Challenge end)
+    local it = lv and safe(function() return lv:GetItemAt(i) end)
+    if not UI.valid(it) then return end
+    touched()
+    local name = UI.clean(UI.loc(safe(function() return it.Text:ToString() end) or "")) or ("Challenge " .. (i + 1))
+    if safe(function() return it.checked end) then name = name .. ", cleared" end
+    local count = safe(function() return lv:GetNumItems() end) or 0
+    local addr = safe(function() return m:GetAddress() end)
+    if addr ~= cc.w then cc.w, cc.count = addr, -1 end     -- screen (re)opened
+    if count ~= cc.count then
+        name = "Combo challenges, " .. count .. ". " .. name
+        cc.count = count
+    end
+    Out.say(name)
+    cc.i = i
+    Menus.defer(function()
+        if cc.i ~= i then return end      -- moved on already
+        local t = Menus.combo_challenge_text(m)
+        if t and t ~= "" then
+            Out.queue(t)
+            Menus.current_move = { name = name:gsub("^Combo challenges, %d+%. ", ""), cmd = t, note = "", dmg = "" }
+        end
+    end, 0.1)
+end
+
+-- Throw Escape Training and Punishment Training (WBP_UI_CounterPractice_C):
+-- left column = difficulty buttons (Win.VerticalBox_DifficultyButton,
+-- TB_Menu_ON), moved with SetCurrentTab(i); right column = moves
+-- (Win.ScrollBox_Command children, WBP_UI_CounterPractice_Command_C:
+-- TB_Number, TB_name, TB_Command, TB_Damage, TB_Message, TB_Note), moved with
+-- SetCursorIndex(i); SetActiveLayer(0/1) = which column. In Throw Escape the
+-- check mark (T_UI_CheckMark, Hidden = off) says whether the dummy uses that
+-- throw; Enter toggles it and sends SetCursorIndex again. TB_Note holds
+-- design placeholder text ("1234567890") and Message a "no recommended
+-- punishment" line on throws: both skipped.
+local cp = { addr = nil, row = {} }
+local function cp_text(w, n) return UI.clean(UI.text_of(safe(function() return w[n] end)) or "") end
+
+local function cp_left(m, i)
+    local win = safe(function() return m.WBP_UI_CounterPractice_Win end)
+    local b = win and safe(function() return win.VerticalBox_DifficultyButton:GetChildAt(i) end)
+    return UI.valid(b) and cp_text(b, "TB_Menu_ON") or nil
+end
+
+local function cp_right(m, i)
+    local win = safe(function() return m.WBP_UI_CounterPractice_Win end)
+    local c = win and safe(function() return win.ScrollBox_Command:GetChildAt(i) end)
+    if not UI.valid(c) then return nil end
+    local head = win and cp_text(win, "TB_Head_List") or ""
+    local no, name, cmd = cp_text(c, "TB_Number"), cp_text(c, "TB_name"), cp_text(c, "TB_Command")
+    if not name then return cp_text(c, "TB_Heading") or UI.read(c), nil end     -- a heading row
+    local t = (no and (no .. ". ") or "") .. name .. (cmd and (". " .. cmd) or "")
+    if head == "Throws" then
+        local vis = safe(function() return c.T_UI_CheckMark:GetVisibility() end)
+        t = t .. ((vis == 1 or vis == 2) and ", off" or ", on")
+    end
+    local extra = {}
+    local dmg = cp_text(c, "TB_Damage")
+    if dmg then extra[#extra + 1] = dmg end
+    local msg = cp_text(c, "TB_Message")
+    if msg and not msg:find("^There are no recommended") then extra[#extra + 1] = msg end
+    local note = cp_text(c, "TB_Note")
+    if note and not note:find("1234567890") then extra[#extra + 1] = note end
+    return t, table.concat(extra, ". ")
+end
+
+function Menus.subscreen_open() return cp.m ~= nil and UI.shown(cp.m) end
+function Menus.subscreen_closed() cp.addr = nil end
+
+local function cp_first(m)
+    local a = safe(function() return m:GetFullName() end)
+    if a == cp.addr then return "" end
+    cp.addr = a
+    local win = safe(function() return m.WBP_UI_CounterPractice_Win end)
+    local head = win and cp_text(win, "TB_Head_List")
+    return head and (head .. ". ") or ""
+end
+
+local function cp_say_left(m, i)
+    local t = cp_left(m, i)
+    if t then Out.say(cp_first(m) .. "Difficulty " .. t) end
+end
+
+local function cp_say_right(m, i)
+    local t, extra = cp_right(m, i)
+    if t then
+        Out.say(cp_first(m) .. t)
+        if extra and extra ~= "" then Out.help(extra) end
+        Menus.current_move = { name = t, cmd = "", note = extra or "", dmg = "" }
+    end
+end
+
+-- opening the screen fires all three at once: one reading per tick, by the
+-- active column when SetActiveLayer came, else the latest move
+local function cp_flush()
+    local b = cp.batch
+    cp.batch = nil
+    local m = b and b.m
+    if not UI.valid(m) then return end
+    if b.layer ~= nil then
+        if b.layer == 0 then cp_say_left(m, safe(function() return m.tab_index end) or 0)
+        else cp_say_right(m, safe(function() return m.cursor_index end) or 0) end
+    elseif b.last == "left" then cp_say_left(m, b.left)
+    else cp_say_right(m, b.right) end
+end
+
+local function cp_hook(which)
+    return function(ctx, index)
+        local m = self_of(ctx)
+        local i = arg(index)
+        if not m or type(i) ~= "number" then return end
+        saw_menu("counterpractice", m)
+        cp.m = m
+        touched()
+        -- the rows are refilled in the same call: read them a tick later
+        if not cp.batch then cp.batch = {}; Menus.defer(cp_flush, 0.03) end
+        cp.batch.m = m
+        cp.batch[which] = i
+        if which ~= "layer" then cp.batch.last = which end
+    end
+end
+
+-- In the challenge itself the steps are WBP_UI_Practice_ComboChallenge_C
+-- (TB_Challenge, VerticalBox_Command of _Line_C rows: TB_Command_ON text).
+-- The current step loops its Anim_Hover; a step that lands plays
+-- Anim_Completed and the hover moves on; a dropped combo puts the hover back
+-- on the first row. No Blueprint event fires for any of it, so the rows are
+-- polled (every 50 ms, ~20 IsAnimationPlaying calls) while the panel shows.
+-- Opening the challenge list (B) from inside a challenge frees widgets a few
+-- seconds later: polling rows kept from before crashed the game every time
+-- (2026-10-29). So no row is kept between polls, and while any menu is open
+-- the panel is dropped too and looked up again (one search) once it closes.
+local ch = { panel = nil, step = nil, done = false, steps = nil, next_t = 0, resume = false }
+
+local function challenge_rows(p, with_text)
+    local out = {}
+    local vb = safe(function() return p.VerticalBox_Command end)
+    local n = UI.valid(vb) and safe(function() return vb:GetChildrenCount() end) or 0
+    for k = 0, n - 1 do
+        local l = safe(function() return vb:GetChildAt(k) end)
+        if UI.valid(l) and safe(function() return l:IsVisible() end) then
+            local row = { w = l }
+            if with_text then
+                local raw = UI.text_of(safe(function() return l.TB_Command_ON end)) or ""
+                raw = raw:gsub('%(or%s*<img id="kbd_[^"]*"%s*/>%s*%)', "")
+                row.text = UI.clean(raw) or ""
+            end
+            out[#out + 1] = row
+        end
+    end
+    return out
+end
+
+local function playing(l, anim)
+    return safe(function() return l:IsAnimationPlaying(l[anim]) end) == true
+end
+
+local function find_challenge_panel()
+    for _, w in ipairs(FindAllOf("WBP_UI_Practice_ComboChallenge_C") or {}) do
+        if UI.valid(w) and safe(function() return w:IsVisible() end) then return w end
+    end
+end
+
+local function drop_panel()
+    if ch.panel then ch.panel, ch.resume = nil, true end
+end
+Menus.drop_challenge_panel = drop_panel
+
+-- the list's PlayAnimDecide (OnDecide never fires): a challenge starts. Find
+-- its panel once it is up (one search, outside the fight loop's per-frame work).
+local function on_combo_decide()
+    touched()
+    ch.resume = false
+    local tries = 0
+    local function look()
+        tries = tries + 1
+        local p = find_challenge_panel()
+        if p then
+            ch.panel, ch.step, ch.done = p, nil, false
+            local F = package.loaded["fight"]; if F then F.refind() end
+            ch.steps = {}
+            for k, row in ipairs(challenge_rows(p, true)) do ch.steps[k] = row.text end
+            ch.title = UI.clean(UI.text_of(safe(function() return p.TB_Challenge end)) or "") or "Challenge"
+            Out.say(ch.title .. ". " .. table.concat(ch.steps, ", then "))
+        elseif tries < 6 then
+            Menus.defer(look, 0.5)
+        end
+    end
+    Menus.defer(look, 0.5)
+end
+
+function Menus.challenge_tick()
+    local t = os.clock()
+    if t < ch.next_t then return end
+    ch.next_t = t + 0.05
+    local F = package.loaded["fight"]
+    local menu = F and F.menu_open()
+    if menu then drop_panel() return end
+    if ch.resume then
+        -- back from a menu: still in the challenge? (one search)
+        ch.resume = false
+        ch.next_t = t + 0.5
+        ch.panel = find_challenge_panel()
+        if not ch.panel then ch.steps = nil; if F then F.refind() end end
+        return
+    end
+    local p = ch.panel
+    if not p then return end
+    if not UI.valid(p) or not safe(function() return p:IsVisible() end) then
+        ch.panel, ch.steps = nil, nil
+        if F then F.refind() end
+        return
+    end
+    local rows = challenge_rows(p, false)
+    local cur, completed = nil, nil
+    for k, row in ipairs(rows) do
+        if not cur and playing(row.w, "Anim_Hover") then cur = k end
+        if playing(row.w, "Anim_Completed") then completed = k end
+    end
+    if completed and completed == #rows and not ch.done then
+        ch.done = true
+        Out.send("T\tclear")
+        Out.say("Challenge cleared!")
+    elseif cur and cur ~= ch.step then
+        if ch.step and cur > ch.step then Out.send("T\tstep" .. (cur - 1))
+        elseif ch.step and cur == 1 and ch.step > 1 and not ch.done then Out.send("T\tdrop") end
+        if cur == 1 then ch.done = false end
+        ch.step = cur
+    end
+end
+
+function Menus.in_challenge() return ch.steps ~= nil end
+
+-- F7 in a challenge: the steps, with the one to do next marked
+function Menus.repeat_challenge()
+    local parts = {}
+    for k, text in ipairs(ch.steps or {}) do
+        parts[k] = (k == ch.step and "Next: " or "") .. text
+    end
+    Out.say((ch.title or "Challenge") .. ". " .. table.concat(parts, ", then "), true)
 end
 
 -- ---------------------------------------------------------------- dialogs
@@ -466,7 +769,7 @@ local SPECS = {
     { SD .. "OnSelectRightSide", function() touched(); Menus.side = 1; Out.say("Right side") end },
     { MM .. "WBP_UI_MainMenu_Menu_List.WBP_UI_MainMenu_Menu_List_C:play_hover", function(ctx) Menus.side = nil; generic_hover(ctx) end },
     -- the battle HUD ticks only while a fight is on screen: free fight detection
-    { "/Game/UI/Widget/HUD/S2/WBP_UI_HUD_S2.WBP_UI_HUD_S2_C:Tick", function() local F = package.loaded["fight"]; if F then F.on_hud_tick() end end },
+    { "/Game/UI/Widget/HUD/S2/WBP_UI_HUD_S2.WBP_UI_HUD_S2_C:Tick", function(ctx) local F = package.loaded["fight"]; if F then F.on_hud_tick(ctx) end end },
     -- in-match pause menu (arcade, versus, story...)
     { "/Game/UI/Widget/Pause/WBP_UI_Pause_MenuButton.WBP_UI_Pause_MenuButton_C:Select", function(ctx) pause_seen(ctx); generic_hover(ctx) end },
     -- Jukebox: the screen widget for the watcher (watch.lua), the preset window
@@ -498,7 +801,12 @@ local DYN = {
                               { "SetCursorButton2", practice_cursor(2) },
                               { "SetCursorButton3", practice_cursor(3) },
                               { "SetCursorButton4", practice_cursor(4) } },
-    WBP_UI_CommandList_C  = { { "SetCursorIndex", on_movelist_cursor } },}
+    WBP_UI_CommandList_C  = { { "SetCursorIndex", on_movelist_cursor } },
+    WBP_UI_CounterPractice_C = { { "SetCurrentTab", cp_hook("left") },
+                                 { "SetCursorIndex", cp_hook("right") },
+                                 { "SetActiveLayer", cp_hook("layer") } },
+    WBP_UI_ComboChallenge_C = { { "SetCursorIndex", on_combo_cursor },
+                                { "PlayAnimDecide", on_combo_decide } },}
 -- function names that mean "this row is now highlighted"
 local HOVER_FUNCS = { play_hover = true, PlayAnimHover = true, PlayHover = true, OnHover = true,
                       PlayAnimSelect = true, PlayAnimFocus = true, play_focus = true }
@@ -621,6 +929,8 @@ local PRELOAD = {
     "/Game/UI/Widget/SideSelect/WBP_UI_SideSelect",
     "/Game/UI/Widget/Practice/WBP_UI_PracticeMenu",
     "/Game/UI/Widget/Practice/WBP_UI_CommandList",
+    "/Game/UI/Widget/Practice/WBP_UI_ComboChallenge",
+    "/Game/UI/Widget/Practice/WBP_UI_CounterPractice",
     "/Game/UI/Widget/Pause/WBP_UI_Pause_MenuButton",
     "/Game/UI/Widget/Dialog/WBP_UI_Dialog_TextButton",
     "/Game/UI/Widget/Dialog/WBP_UI_Dialog",
@@ -652,6 +962,7 @@ end
 
 -- F7: the whole current move again with its notes
 function Menus.repeat_move()
+    if ch.steps then Menus.repeat_challenge() return end
     local m = Menus.current_move
     if not m then Out.say("No move selected.") return end
     local t = m.name .. ". " .. m.cmd
