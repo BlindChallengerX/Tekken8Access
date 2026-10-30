@@ -217,7 +217,7 @@ for ch, sc in zip("qwertyuiop", range(0x10, 0x1A)): KEYS[ch] = (ord(ch.upper()),
 for ch, sc in zip("asdfghjkl", range(0x1E, 0x27)): KEYS[ch] = (ord(ch.upper()), sc, 0)
 for ch, sc in zip("zxcvbnm", range(0x2C, 0x33)): KEYS[ch] = (ord(ch.upper()), sc, 0)
 for i, ch in enumerate("1234567890"): KEYS[ch] = (ord(ch), 0x02 + i, 0)
-KEYS.update({"numminus": (0x6D, 0x4A, 0), "num9": (0x69, 0x49, 0), "num7": (0x67, 0x47, 0), "num1": (0x61, 0x4F, 0), "num3": (0x63, 0x51, 0), "pgup": (0x21, 0x49, 1), "pgdn": (0x22, 0x51, 1)})
+KEYS.update({"numminus": (0x6D, 0x4A, 0), "num9": (0x69, 0x49, 0), "num7": (0x67, 0x47, 0), "num1": (0x61, 0x4F, 0), "num3": (0x63, 0x51, 0), "num4": (0x64, 0x4B, 0), "num5": (0x65, 0x4C, 0), "num6": (0x66, 0x4D, 0), "num8": (0x68, 0x48, 0), "num2": (0x62, 0x50, 0), "pgup": (0x21, 0x49, 1), "pgdn": (0x22, 0x51, 1)})
 
 
 def _send(name, up):
@@ -275,6 +275,10 @@ def at_main(st):
     return has(st, "WBP_UI_MainMenu_C") and not has(st, "Dialog")
 
 
+MOVIE = """for _, w in ipairs(FindAllOf("WBP_UI_StoryMoviePlayer_C") or {}) do
+  if w:IsValid() and w:IsVisible() then return "StoryMoviePlayer" end end return """""
+
+
 def boot(timeout=240):
     """After a (re)start: press through movies and the title, close news and
     notices, until the main menu. Raises BotError if it does not get there."""
@@ -298,6 +302,8 @@ def boot(timeout=240):
                            "keyboard (press a controller button there once)")
         if has(st, "News"):
             press("esc", after=1.0)
+        elif not st and "StoryMoviePlayer" in lua(MOVIE):
+            press("esc", after=1.5)         # the attract movie ignores Enter
         else:
             press("enter", after=1.5)       # movies, title, notices
     raise BotError("did not reach the main menu")

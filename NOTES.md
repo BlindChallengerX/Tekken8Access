@@ -1,7 +1,8 @@
-﻿# TekkenA11y developer notes (rebuild 0.7.0, 2026-10-16, game ver. 3.02.02)
+# TekkenA11y developer notes (rebuild 0.7.0, 2026-10-16, game ver. 3.02.02)
 
 ## Layout
-- `mod/Scripts` - UE4SS Lua (main, out, menus, fight, data, lib/ui, lib/notation, dev).
+- `mod/Scripts` - UE4SS Lua (main, out, menus, fight, tam = Arcade Quest, watch, data, lib/ui,
+  lib/notation, dev).
 - `helper/` - TekkenA11yHelper.exe (C, 64-bit w64devkit): named pipe `\\.\pipe\TekkenA11y`,
   Prism speech (speech.c from SC2 Access), waveOut synth (audio.c from SC2), beacon.c.
 - `build.sh` (Git Bash) -> `out/TekkenA11y`; `deploy.ps1` copies into the game's Mods folder.
@@ -155,6 +156,34 @@ bottom 3, right 4. kbd_NNN_en_US are keyboard key pictures (key unknown -> "keyb
 - Esc from the challenge list leaves the challenge (back to free practice).
 - Dev console: never walk every property of a big widget (WBP_UI_Practice_S2_C froze the game).
 
+## Arcade Quest (tam.lua, 0.7.2, 2026-10-29)
+- Classes under /Game/TrueArcadeMode/. Player BP_TAM_Player_C (ReceiveTick hooked: hands over the
+  player, no searches). collision_npc = the NPC in reach; ui_talk (WBP_TAM_Npc_Talk_C),
+  ui_battle_talk (WBP_UI_TAM_Talk_C), ui_menu_2d (WBP_UI_TAM_BuddyMenu_C, Max's menu);
+  IsTalkTurn / IsEventFlag / IsPauseMenu.
+- NPCs: BP_TAM_NPC_Base_C subclasses (Ghost, Menu = Max, GhostMenu = ghost battle machine,
+  MachineBattle_Base at (0,0,2000) = placeholder, skipped). Names: GhostName (string),
+  AvatarHeadName (Max), else NpcName (often NULL). IsWon, IsTreasure, GhostRank.
+- Head widgets WBP_UI_Lobby_AvatarHead_C: TB_name2, Rep_T_UI_LOBBY_ICON texture T_UI_LB_Icon_09 =
+  treasure chest, _03 = none. Prompt WBP_UI_Lobby_HeadGuide_C ("<kbd> Talk/Battle"), only while
+  the NPC is on screen; a guide with no parent is not shown.
+- Talk: Npc_Talk.showingMessage holds the whole line while it types out; "Event Show" /
+  "Event Show Next Text" fire per line. The window stays IsVisible after closing.
+- UE4SS gives a new Lua object for the same UObject: compare actors by GetFullName, not ==.
+- Max's menu rows are made at run time: WBP_UI_TAM_BuddyMenuList_C:OnButtonSelect (and
+  _SubList_C) give the row (TB_text_ON); BuddyMenu.TB_Msg = Max's line for it. Arcade map
+  WBP_UI_TAM_RPG_Map_C (Event_Start), spots WBP_UI_TAM_RPG_Icon_C:PlayAnim_Hover, IsUnlock.
+- Keyboard in Arcade Quest: WASD move (camera-relative), J and Numpad 4 use people/machines,
+  B opens the menu (Quick Select, Sound Options, Controller Setup, Main Menu), N switches the
+  name tags (name / Steam id / Polaris id). The camera turns with the avatar.
+- Beacon: "F mx my ox oy cx cy far near" (far 1500, near 120 cm); silent in reach and while busy.
+- kbd_NNN icons: NNN = scan code (kbd_036 J, kbd_048 B, kbd_049 N, kbd_075 Numpad 4).
+
+## Character Episodes (2026-10-29)
+- WBP_UI_Story_CharaEpisode_C: SetBgInfo(_, name, style, origin, height, weight) text ids, then
+  SelectEpisode(index). Rows = ScrollBox_List children (TB_text_ON upper case, Locked,
+  img_Clear visibility 0 = cleared). Episode intro/ending text comes through the subtitle reader.
+
 ## Testing notes
 - Keyboard in fights belongs to whichever device pressed a button at the title. If a
   controller pressed first, keyboard works in menus but not in battle (B, arrows).
@@ -166,8 +195,11 @@ dialog buttons 28-51 ms, move list 16-75 ms, practice rows 100-170 ms (deferred 
 tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file outbox.
 
 ## Not done / unverified
-- Arcade Quest talk/tutorial text hooks (OnSetTextId...) are generic and untested.
+- Arcade Quest: story/battle talk (WBP_UI_TAM_Talk_C) not yet seen in game; the "!" icon texture
+  over a head is not known (unknown icons are logged "TAM icon"); campaign chapters (other maps)
+  not tested, only the post-campaign ghost arcade (TAM_Ghost_PL).
 - Keyboard key names for kbd_ icons; Roger Jr. id; story fighter names.
 - Beacon only uses the camera frame; no wall cues yet. Ball cue untested by ear.
-- The keyboard is sometimes ignored at the title screen (a controller is plugged in): someone
-  has to press a controller button there.
+- The keyboard is ignored at the title screen after a restart while a controller is plugged in
+  (every restart on 2026-10-29): someone has to press a controller button there. The attract
+  movie (WBP_UI_StoryMoviePlayer_C, not in viewport) needs Esc; t8.py boot presses it.

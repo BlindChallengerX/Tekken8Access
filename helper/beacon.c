@@ -7,9 +7,10 @@
  * get closer. Steps change only once the angle is clearly past a threshold,
  * so idle sway does not wobble the note.
  *
- * The mod sends "F mx my ox oy cx cy" about every 30 ms during a fight:
- * my and the opponent's ground positions (UE units, cm) and the camera's
- * forward direction on the ground.
+ * The mod sends "F mx my ox oy cx cy [far near]" about every 30 ms during a
+ * fight: my and the opponent's ground positions (UE units, cm) and the
+ * camera's forward direction on the ground. Arcade Quest adds the distances
+ * of the slowest and fastest ping (the room is bigger than a stage).
  */
 #include "access.h"
 #include <math.h>
@@ -26,6 +27,7 @@ static int s_have;
 static int s_on = 1;
 static float s_vol = 1.0f;
 static float s_near = 80, s_far = 700;    /* cm: fastest / slowest ping */
+static float s_frame_near = 80, s_frame_far = 700;   /* this frame's (F far near) */
 static int s_ball_on = 1;
 
 static void init(void) { if (!s_init) { InitializeCriticalSection(&s_lock); s_init = 1; } }
@@ -54,6 +56,8 @@ void beacon_frame(const float *v, int n) {
     EnterCriticalSection(&s_lock);
     s_last_frame = GetTickCount();
     s_dist = len;
+    s_frame_far = n >= 8 && v[6] > v[7] ? v[6] : s_far;
+    s_frame_near = n >= 8 && v[6] > v[7] ? v[7] : s_near;
     if (len > 20) {
         float dep = depth / len, a = fabsf(dep);
         int m = s_level < 0 ? -s_level : s_level;
@@ -125,9 +129,10 @@ void beacon_tick(void) {
     EnterCriticalSection(&s_lock);
     int live = s_have && s_on && now - s_last_frame < 300;
     float dist = s_dist, pan = s_pan, vol = s_vol; int level = s_level;
+    float pfar = s_frame_far, pnear = s_frame_near;
     LeaveCriticalSection(&s_lock);
     if (!live || now < s_ping_next) return;
-    float k = (s_far - dist) / (s_far - s_near);
+    float k = (pfar - dist) / (pfar - pnear);
     if (k < 0) k = 0; if (k > 1) k = 1;
     static const int semis_for[5] = { -12, -5, 0, 5, 12 };
     float g = (0.12f + 0.06f * k) * vol;

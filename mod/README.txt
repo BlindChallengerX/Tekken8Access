@@ -1,4 +1,4 @@
-﻿TekkenA11y 0.7.1 - screen reader and audio cues for Tekken 8
+﻿TekkenA11y 0.7.2 - screen reader and audio cues for Tekken 8
 =============================================================
 
 Speech goes through Prism (NVDA, JAWS and others, or the Windows voice if no
@@ -24,7 +24,8 @@ What is read
 - Jukebox: the album carousel (series, All, My Playlists; "selected" marks
   the one playing), series tabs, track and stage music lists, preset options.
 - Story and cutscene subtitles are read as they appear (F3 turns them off).
-- Arcade Quest talk and tutorial captions, Tekken Ball ball and damage info.
+- Tekken Ball ball and damage info.
+- Keyboard keys in prompts are named ("J key, Battle", "Numpad 4 key, Talk").
 - Move list and sample combos: number, move name and the command in Tekken
   notation (d/f+1, hold f, 1+2 ...), then notes and damage when you rest.
   "then" marks the next part of a string or combo.
@@ -58,6 +59,32 @@ Fights
   about 3.5 meters), ticking faster as it gets closer. F5 also says how far
   the ball is, which side, and whether it is low, chest high or high.
 
+Arcade Quest
+------------
+- You walk your avatar around the arcade. F1 picks the nearest person or
+  machine and says how far and which way ("Max, 2 meters ahead"); press F1
+  again for the next one, Shift+F1 to go back. Ghosts with a treasure chest
+  say "treasure".
+- The opponent beacon then points at your pick: the same two soft beeps as
+  in fights, panned to its side of the screen, second note higher when it
+  is ahead of you (up the screen) and lower when behind, faster as you get
+  closer. It goes quiet once you are in reach and while a talk window, Max's
+  menu or the arcade map is open. F6 turns it off.
+- When you are close enough you hear a short tone and the name with the
+  game's prompt ("Max, Numpad 4 key, Talk"), or "in reach" when they are out
+  of the camera's view (the game hides the prompt then; the key still works).
+- Talk lines are read with the speaker's name. The objective is read when it
+  changes; F5 says it again with where your pick is.
+- Max's menu reads each row and then his line about it; the arcade map
+  (Head Out) reads each arcade, and "locked".
+- The pause menu in Arcade Quest is B on the keyboard.
+
+Character Episodes
+------------------
+- The character list reads each name with "cleared" or "locked", then full
+  name, fighting style, country, height and weight when you rest.
+- The episode's story text and spoken lines are read as subtitles.
+
 Throw Escape and Punishment Training (Practice pause menu)
 ---------------------------------------------------------
 - The left column reads the difficulty, the right column each move with its
@@ -77,10 +104,12 @@ Combo Challenges (Practice pause menu)
 
 Keys
 ----
+F1   Arcade Quest: next person or machine (Shift+F1: previous)
 F3   subtitles on / off
 F4   Tekken Ball sound on / off
-F5   distance and health (and the ball in Tekken Ball)
-F6   opponent beacon on / off
+F5   distance and health (and the ball in Tekken Ball; in Arcade Quest the
+     objective and where your pick is)
+F6   opponent beacon on / off (also the Arcade Quest beacon)
 F7   repeat the selected move with its notes (in a combo challenge: its steps)
 F8   repeat the last thing said
 F9   read everything on screen

@@ -1,12 +1,13 @@
 --[[
-  TekkenA11y 0.7.1 - screen reader and audio cues for Tekken 8 (UE4SS Lua mod)
+  TekkenA11y 0.7.2 - screen reader and audio cues for Tekken 8 (UE4SS Lua mod)
 
   Speech and sounds come from speaker\TekkenA11yHelper.exe (Prism + a small
   synth), fed through a named pipe, so there is no file polling between a
   key press and speech. Menus are read from the game's own Blueprint events
   (menus.lua); the fight beacon reads fighter positions (fight.lua).
 
-  Keys: F3 subtitles on/off, F4 Tekken Ball sound on/off, F5 fight status,
+  Keys: F1 / Shift+F1 Arcade Quest: next / previous person or machine,
+        F3 subtitles on/off, F4 Tekken Ball sound on/off, F5 fight status (Arcade Quest: objective and pick),
         F6 beacon on/off, F7 repeat move with notes, F8 repeat last speech,
         F2 throw break sounds on/off, F9 read screen, F11 speech on/off.
 
@@ -25,8 +26,9 @@ local Menus = require("menus")
 local Fight = require("fight")
 Fight.dir = MOD_DIR
 local Watch = require("watch")
+local TAM   = require("tam")
 
-print("[A11y] TekkenA11y 0.7.1 loading\n")
+print("[A11y] TekkenA11y 0.7.2 loading\n")
 
 -- helper process: one instance, exits with the game
 if MOD_DIR then
@@ -47,9 +49,13 @@ end
 -- Key callbacks run on UE4SS's own thread: they only queue the action, the
 -- next frame on the game thread performs it.
 local key_queue = {}
-local function bind(key, fn)
+local function bind(key, fn, mod)
     if not Key[key] then return end
-    RegisterKeyBind(Key[key], function() key_queue[#key_queue + 1] = { key, fn } end)
+    if mod then
+        RegisterKeyBind(Key[key], { ModifierKey[mod] }, function() key_queue[#key_queue + 1] = { key, fn } end)
+    else
+        RegisterKeyBind(Key[key], function() key_queue[#key_queue + 1] = { key, fn } end)
+    end
 end
 
 local function read_screen()
@@ -65,7 +71,9 @@ end
 
 bind("F3", Menus.toggle_subtitles)
 bind("F4", Fight.toggle_ball)
-bind("F5", Fight.status)
+bind("F5", function() if not TAM.status() then Fight.status() end end)
+bind("F1", function() TAM.next(1) end)
+bind("F1", function() TAM.next(-1) end, "SHIFT")
 bind("F6", Fight.toggle_beacon)
 bind("F7", Menus.repeat_move)
 bind("F8", function() Out.send("S1\t" .. (Out.last ~= "" and Out.last or "Nothing yet.")) end)
@@ -96,7 +104,7 @@ local function frame()
     end
     step("out", Out.tick)
     step("deferred", Menus.run_deferred)
-    if not Fight.active() then step("watch", Watch.tick) end
+    if not Fight.active() then step("watch", Watch.tick); step("tam", TAM.tick) end
     step("subtitles", Watch.subtitles)
     step("fight", Fight.tick)
     step("challenge", Menus.challenge_tick)
@@ -114,6 +122,8 @@ local FRAME_HOOKS = {
     "/Game/UI/Widget/Elements/WBP_UI_InformationBar.WBP_UI_InformationBar_C:Tick",
 }
 for _, p in ipairs(FRAME_HOOKS) do Menus.add_pending(p, frame) end
+-- Arcade Quest: the avatar's tick hands tam.lua the player (no searches)
+for _, h in ipairs(TAM.HOOKS) do Menus.add_pending(h[1], h[2]) end
 
 -- Maintenance: register hooks for classes that have loaded, load the screens
 -- we hook, look for new widget classes and the subtitle widget. Runs on the

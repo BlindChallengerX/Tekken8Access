@@ -752,6 +752,38 @@ local function on_chapter(ctx)
     end)
 end
 
+-- ---------------------------------------------------------------- character episodes
+-- WBP_UI_Story_CharaEpisode_C: SetBgInfo(_, name, style, origin, height,
+-- weight) (text ids) comes just before SelectEpisode(index). Rows are the
+-- ScrollBox_List children: TB_text_ON ("DEVIL JIN"), Locked, img_Clear
+-- (visibility 0 = cleared).
+local episode_info = nil
+local function title_case(s)
+    return (s:lower():gsub("(%a)([%w']*)", function(a, b) return a:upper() .. b end))
+end
+local function on_episode_info(ctx, _, name, style, origin, height, weight)
+    local parts = {}
+    for _, p in ipairs({ name, style, origin, height, weight }) do
+        local t = UI.arg_text(p)
+        if t then parts[#parts + 1] = t end
+    end
+    episode_info = table.concat(parts, ", ")
+end
+local function on_episode_select(ctx, index)
+    local w = self_of(ctx)
+    local i = arg(index)
+    if not w or type(i) ~= "number" then return end
+    touched()
+    local row = safe(function() return w.ScrollBox_List:GetChildAt(i) end)
+    local nm = UI.valid(row) and UI.clean(UI.text_of(safe(function() return row.TB_text_ON end)) or "")
+    if not nm or nm == "" then return end
+    local t = title_case(nm)
+    if safe(function() return row.Locked end) then t = t .. ", locked"
+    elseif safe(function() return row.img_Clear:GetVisibility() end) == 0 then t = t .. ", cleared" end
+    Out.say(t)
+    if episode_info and episode_info ~= "" then Out.help(episode_info) end
+end
+
 -- ---------------------------------------------------------------- hook table
 local CS = "/Game/UI/Widget/CharSelect/WBP_UI_CharSelect.WBP_UI_CharSelect_C:"
 local SS = "/Game/UI/Widget/StageSelect/WBP_UI_StageSelect.WBP_UI_StageSelect_C:"
@@ -783,6 +815,8 @@ local SPECS = {
     { "/Game/UI/Widget/Dialog/WBP_UI_DifficultySelect_MenuButton.WBP_UI_DifficultySelect_MenuButton_C:Select", generic_hover },
     -- story chapter select
     { "/Game/UI/Widget/Story_ChapterSelect/WBP_UI_Story_ChapterSelect.WBP_UI_Story_ChapterSelect_C:SetChapterTitleText", on_chapter },
+    { "/Game/UI/Widget/Story_CharaEpisode/WBP_UI_Story_CharaEpisode.WBP_UI_Story_CharaEpisode_C:SetBgInfo", on_episode_info },
+    { "/Game/UI/Widget/Story_CharaEpisode/WBP_UI_Story_CharaEpisode.WBP_UI_Story_CharaEpisode_C:SelectEpisode", on_episode_select },
     -- story subtitles are read by watch.lua: a hook on CreateFrontSubtitle
     -- fired during a loading screen (another thread) and froze the Lua side
     -- dialogs: read the whole dialog when it opens
@@ -935,6 +969,7 @@ local PRELOAD = {
     "/Game/UI/Widget/Dialog/WBP_UI_Dialog_TextButton",
     "/Game/UI/Widget/Dialog/WBP_UI_Dialog",
     "/Game/UI/Widget/Story_ChapterSelect/WBP_UI_Story_ChapterSelect",
+    "/Game/UI/Widget/Story_CharaEpisode/WBP_UI_Story_CharaEpisode",
     "/Game/UI/Widget/Dialog/WBP_UI_Dialog_Menu",
     "/Game/UI/Widget/Dialog/WBP_UI_Dialog_LR",
     "/Game/UI/Widget/Dialog/WBP_UI_Dialog_LR_Menu",

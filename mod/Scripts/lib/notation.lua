@@ -17,6 +17,18 @@ local DIRS = { [3] = "d/b", [4] = "d", [5] = "d/f", [6] = "b", [7] = "f", [8] = 
                [11] = "hold d/b", [12] = "hold d", [13] = "hold d/f", [14] = "hold b", [15] = "hold f",
                [16] = "hold u/b", [17] = "hold u", [18] = "hold u/f", [19] = "n" }
 
+-- PC scan codes (set 1) of the keyboard key pictures
+local KEYS = { [1] = "Escape", [14] = "Backspace", [15] = "Tab", [28] = "Enter", [29] = "Control",
+               [42] = "Shift", [54] = "Right Shift", [56] = "Alt", [57] = "Space", [58] = "Caps Lock",
+               [71] = "Numpad 7", [72] = "Numpad 8", [73] = "Numpad 9", [74] = "Numpad minus",
+               [75] = "Numpad 4", [76] = "Numpad 5", [77] = "Numpad 6", [78] = "Numpad plus",
+               [79] = "Numpad 1", [80] = "Numpad 2", [81] = "Numpad 3", [82] = "Numpad 0", [83] = "Numpad period" }
+for i, ch in ipairs({ "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "minus", "equals" }) do KEYS[i + 1] = ch end
+for i = 1, 10 do KEYS[15 + i] = ("QWERTYUIOP"):sub(i, i) end
+for i = 1, 9 do KEYS[29 + i] = ("ASDFGHJKL"):sub(i, i) end
+for i = 1, 7 do KEYS[43 + i] = ("ZXCVBNM"):sub(i, i) end
+for i = 1, 10 do KEYS[58 + i] = "F" .. i end
+
 local function buttons(mask)
     local t = {}
     for b = 1, 4 do if mask & (1 << (b - 1)) ~= 0 then t[#t + 1] = tostring(b) end end
@@ -36,8 +48,10 @@ local function icon(id)
         if n == 38 then return { kind = "word", text = "then" } end
         return { kind = "word", text = "icon " .. n }
     end
-    -- keyboard key pictures (shortcut keys, Special Style); which key is not known yet
-    if id:find("^kbd_") then return { kind = "word", text = "keyboard key" } end
+    -- keyboard key pictures: kbd_NNN_en_US, NNN = the key's scan code
+    -- (kbd_036 = J, kbd_048 = B, kbd_049 = N, checked against the screen)
+    local sc = tonumber(id:match("^kbd_(%d+)"))
+    if sc then return { kind = "word", text = (KEYS[sc] or "keyboard") .. " key" } end
     return { kind = "word", text = (id:gsub("_", " ")) }
 end
 
