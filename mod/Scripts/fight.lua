@@ -29,6 +29,7 @@
 local Out = require("out")
 local UI  = require("lib/ui")
 local D   = require("data")
+local Prof = require("lib/prof")
 
 local Fight = {}
 local safe = UI.safe
@@ -74,6 +75,7 @@ function Fight.refind() refind = true end
 local hud_t = -10
 local hud_w = nil
 function Fight.on_hud_tick(ctx)
+    Prof.frame_gap()
     hud_t = os.clock()
     if ctx and not UI.valid(hud_w) then hud_w = safe(function() return ctx:get() end) end
 end

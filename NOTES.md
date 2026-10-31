@@ -37,7 +37,14 @@ runs Lua on the game thread, `--async` first line runs it off-thread. Output in
   EffectManager/StageEffectManager/ItemEffectManager ReceiveTick, InformationBar Tick; ~35 ms)
   and maint() (1 s: RegisterHook for loaded classes, preload, scans). RegisterHook from inside a
   hook callback for a different function works; never for the function being dispatched.
-- FindFirstOf/FindAllOf cost 10-26 ms (a whole frame) and StaticFindObject 0.2 ms: in fights
+- StaticFindObject of a class that is not loaded costs ~13 ms (2026-10-31, measured in a fight;
+  found classes are quick), and so does a failed RegisterHook. 0.7.2's Arcade Quest hooks stayed
+  pending outside Arcade Quest, and maint() looked for all of them and retried them every second:
+  a ~200 ms freeze each second, felt as input lag in fights. Now maint() does nothing in a fight,
+  checks one class per pass (fixed hooks first, every 5 s when menus are idle) and registers only
+  hooks of classes it found. lib/prof.lua logs "prof gaps" / "prof busy" to helper.log every 5 s
+  in fights (frame gaps and the mod's costliest hooks and steps).
+- FindFirstOf/FindAllOf cost 10-26 ms (a whole frame): in fights
   nothing searches. Fight detection = WBP_UI_HUD_S2_C:Tick hook; menu widgets come from their
   hooks; fighters/ball/PlayerController searched once per fight; scans only after menu activity;
   check_pending looks at 12 generic classes per second plus the fixed ones. Measured in a fight:

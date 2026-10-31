@@ -27,6 +27,7 @@ local Fight = require("fight")
 Fight.dir = MOD_DIR
 local Watch = require("watch")
 local TAM   = require("tam")
+local Prof  = require("lib/prof")
 
 print("[A11y] TekkenA11y 0.7.2 loading\n")
 
@@ -89,7 +90,9 @@ end)
 -- deferred menu reads, screen watchers, subtitles, the fight beacon.
 local last_run, n = -1, 0
 local function step(name, fn)
+    local t0 = os.clock()
     local ok, err = pcall(fn)
+    Prof.add(name, os.clock() - t0)
     if not ok then Out.log(name .. ": " .. tostring(err)) end
 end
 
@@ -110,6 +113,7 @@ local function frame()
     step("challenge", Menus.challenge_tick)
     if Dev then step("dev", Dev.poll) end
     if A11Y_MAINT then A11Y_MAINT() end
+    Prof.flush(Out.log, Fight.active())
 end
 
 -- Per-frame Blueprint events: the effect managers tick in menus and battles,
@@ -134,14 +138,17 @@ for _, h in ipairs(TAM.HOOKS) do Menus.add_pending(h[1], h[2]) end
 --   * ExecuteInGameThread from the async thread waits for a lock the game
 --     thread holds while it runs a Lua hook, and that hook waits for the Lua
 --     lock the async thread holds: the game hung (user saw "fatal error").
--- Searches cost a frame or more (FindFirstOf 10-25 ms, a class scan ~36 ms),
+-- Searches cost a frame or more (FindFirstOf 10-25 ms, a class scan ~36 ms,
+-- a StaticFindObject miss ~13 ms),
 -- so none happen in a fight, and scans only right after menu activity.
 local last_maint, preload_done, last_scan, last_sub_find = -10, false, -10, -10
 local function maint()
     local t = os.clock()
     if t - last_maint < 1.0 then return end
     last_maint = t
-    Menus.check_pending()
+    -- hooks: lookups that find nothing cost ~13 ms, so check_pending keeps
+    -- them to one a pass and none in a fight (menus.lua)
+    Menus.check_pending(Fight.active())
     if Menus.pending_ready then Menus.register_pending() end
     if Fight.active() then return end
     if not preload_done and t - Menus.last_menu_t < 3 then

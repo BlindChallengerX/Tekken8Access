@@ -68,8 +68,7 @@ function UI.collect(w, out, depth)
 end
 
 -- label of a row: ON texts if there are any, else everything; no repeats
-function UI.read(w, skip)
-    local all = UI.collect(w)
+local function label(all, skip)
     local has_on = false
     for _, e in ipairs(all) do if e.name:find("_ON") or e.name:find("_On$") then has_on = true break end end
     local parts, seen = {}, {}
@@ -82,6 +81,36 @@ function UI.read(w, skip)
         end
     end
     return table.concat(parts, ", ")
+end
+
+function UI.read(w, skip) return label(UI.collect(w), skip) end
+
+-- UI.read for a widget read again and again (the help bar on every cursor
+-- move): walking its tree took 20-34 ms a time, so the text widgets and
+-- their parents are found once and then only those are read. One widget at
+-- a time (keyed by address); a dead text widget means a new walk.
+local cached_addr, cached = nil, nil
+local function text_widgets(w, chain, out, depth)
+    if depth > 16 or #out > 60 or not UI.valid(w) then return out end
+    local here = { table.unpack(chain) }
+    here[#here + 1] = w
+    if safe(function() return w:GetText() end) ~= nil then out[#out + 1] = { w = w, chain = here, name = UI.name(w) } end
+    for _, c in ipairs(children(w)) do text_widgets(c, here, out, depth + 1) end
+    return out
+end
+function UI.read_cached(w, skip)
+    local addr = safe(function() return w:GetAddress() end)
+    if not addr then return UI.read(w, skip) end
+    if addr ~= cached_addr then cached_addr, cached = addr, text_widgets(w, {}, {}, 0) end
+    local all = {}
+    for _, e in ipairs(cached) do
+        if not UI.valid(e.w) then cached_addr = nil; return UI.read(w, skip) end
+        local shown = true
+        for _, a in ipairs(e.chain) do if not vis(a) then shown = false break end end
+        local t = shown and UI.text_of(e.w)
+        if t then all[#all + 1] = { name = e.name, text = t } end
+    end
+    return label(all, skip)
 end
 
 -- localised string for a text id (move list data, etc.)

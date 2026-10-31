@@ -15,6 +15,7 @@
 local Out = require("out")
 local UI  = require("lib/ui")
 local D   = require("data")
+local Prof = require("lib/prof")
 
 local Menus = {}
 local safe = UI.safe
@@ -101,7 +102,7 @@ end
 -- The information bar at the bottom explains the highlighted item.
 local function info_bar(w)
     Menus.last_menu_t = os.clock()
-    local t = UI.read(w)
+    local t = UI.read_cached(w)
     if t ~= "" then Out.help(t) end
     Menus.defer(practice_fallback, 0.12)   -- the highlight flag updates a little later
 end
@@ -855,13 +856,15 @@ local LOG_FUNCS = { OnCursorMoveUMG = true, CallSelectSlotCallback = true }
 local registered = {}     -- path -> true once hooked
 local pending = {}        -- path -> fn
 
-local important = {}      -- SPECS and add_pending paths: checked every pass
+local important = {}      -- SPECS and add_pending paths (fixed hooks)
 for _, s in ipairs(SPECS) do pending[s[1]] = s[2]; important[s[1]] = true end
 
 local function try_register(path, fn)
     if registered[path] then return true end
     local ok = pcall(RegisterHook, path, function(ctx, ...)
+        local t0 = os.clock()
         local ok2, err = pcall(fn, ctx, ...)
+        Prof.add(path, os.clock() - t0)
         if not ok2 then Out.log("hook error " .. path .. ": " .. tostring(err)) end
     end)
     if ok then registered[path] = true; Out.log("hooked " .. path) end
@@ -872,47 +875,68 @@ function Menus.add_pending(path, fn)
     if not registered[path] then pending[path] = fn; important[path] = true end
 end
 
--- game thread (frame, once a second): is any pending hook's class loaded?
--- main.lua's registration job only runs when this says so.
--- StaticFindObject costs ~0.2 ms and there are a few hundred pending hooks
--- (generic ones of classes not loaded), so this looks at no more than 12
--- classes per call, in turn.
+-- game thread (main.lua maint(), once a second): is a pending hook's class
+-- loaded? A StaticFindObject that finds nothing costs ~13 ms (measured in a
+-- fight, 2026-10-31); one that finds the class is quick. The Arcade Quest
+-- hooks stay pending everywhere else: looking for them every second froze
+-- the game ~200 ms a second (felt as input lag in fights). Checking only one
+-- class a second instead left the pause menu and move list unhooked (the
+-- preloaded screens were found too late). So: every class not missed yet is
+-- checked each pass (quick while they are found); a miss marks the class,
+-- and marked classes are tried again one every 5 s, only outside fights.
+-- At most one miss per pass.
+local function pending_has(cls)
+    for path in pairs(pending) do if path:sub(1, #cls + 1) == cls .. ":" then return true end end
+    return false
+end
+
 Menus.pending_ready = false
-local check_list, check_pos = {}, 0
-function Menus.check_pending()
-    if check_pos >= #check_list then
-        local seen = {}
-        check_list, check_pos = {}, 0
-        for path in pairs(pending) do
-            local cls = path:match("^(.-):")
-            if cls and not seen[cls] then seen[cls] = true; check_list[#check_list + 1] = cls end
-        end
-    end
-    for _ = 1, 12 do
-        check_pos = check_pos + 1
-        local cls = check_list[check_pos]
-        if not cls then break end
-        local o = StaticFindObject(cls)
-        if o and UI.valid(o) then Menus.pending_ready = true end
-    end
-    -- the fixed hooks (SPECS, frame ticks, preloaded screens) are few: check
-    -- their classes every time, each class once
-    local seen = {}
+local missed = {}          -- class -> true after a lookup found nothing
+local miss_list, miss_pos, last_retry = {}, 0, -10
+local ready_cls = {}
+function Menus.check_pending(fighting)
+    local seen, misses = {}, {}
+    local budget = 1
     for path in pairs(pending) do
-        local cls = important[path] and path:match("^(.-):")
+        local cls = path:match("^(.-):")
         if cls and not seen[cls] then
             seen[cls] = true
-            local o = StaticFindObject(cls)
-            if o and UI.valid(o) then Menus.pending_ready = true return end
+            if missed[cls] then misses[#misses + 1] = cls
+            elseif budget > 0 then
+                local o = StaticFindObject(cls)
+                if o and UI.valid(o) then ready_cls[cls] = true; Menus.pending_ready = true
+                else missed[cls] = true; budget = 0 end
+            end
         end
+    end
+    if fighting or budget == 0 or #misses == 0 or os.clock() - last_retry < 5 then return end
+    last_retry = os.clock()
+    if miss_pos >= #miss_list then miss_list, miss_pos = misses, 0 end
+    miss_pos = miss_pos + 1
+    local cls = miss_list[miss_pos]
+    if cls and pending_has(cls) then
+        local o = StaticFindObject(cls)
+        -- one screen's classes load together (Arcade Quest): look at every
+        -- marked class again, they are quick once found
+        if o and UI.valid(o) then missed = {}; ready_cls[cls] = true; Menus.pending_ready = true end
     end
 end
 
--- game thread (main.lua frame()): register whatever has loaded since last time
+-- game thread (main.lua maint()): register the hooks whose class has loaded.
+-- A hook that still fails on a loaded class (no such function) is dropped
+-- after three tries.
+local reg_fails = {}
 function Menus.register_pending()
     for path, fn in pairs(pending) do
-        if try_register(path, fn) then pending[path] = nil end
+        if ready_cls[path:match("^(.-):") or ""] then
+            if try_register(path, fn) then pending[path] = nil
+            else
+                reg_fails[path] = (reg_fails[path] or 0) + 1
+                if reg_fails[path] >= 3 then pending[path] = nil; Out.log("hook dropped " .. path) end
+            end
+        end
     end
+    ready_cls, Menus.pending_ready = {}, false
 end
 
 -- game thread: look at live widget classes and queue hooks for new ones
@@ -929,6 +953,7 @@ function Menus.scan_classes()
             local path = full:match("%s(.+)$")
             local short = path and path:match("%.([^.]+)$")
             if path and short then
+                ready_cls[path], Menus.pending_ready = true, true    -- live, so loaded
                 local dyn = DYN[short]
                 if dyn then
                     for _, d in ipairs(dyn) do pending[path .. ":" .. d[1]] = d[2] end
