@@ -1,5 +1,5 @@
 --[[
-  TekkenA11y 0.7.2 - screen reader and audio cues for Tekken 8 (UE4SS Lua mod)
+  TekkenA11y 1.0 - screen reader and audio cues for Tekken 8 (UE4SS Lua mod)
 
   Speech and sounds come from speaker\TekkenA11yHelper.exe (Prism + a small
   synth), fed through a named pipe, so there is no file polling between a
@@ -29,7 +29,7 @@ local Watch = require("watch")
 local TAM   = require("tam")
 local Prof  = require("lib/prof")
 
-print("[A11y] TekkenA11y 0.7.2 loading\n")
+print("[A11y] TekkenA11y 1.0 loading\n")
 
 -- helper process: one instance, exits with the game
 if MOD_DIR then

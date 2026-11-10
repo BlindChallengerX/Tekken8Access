@@ -163,7 +163,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     wcscat(logp, L"\\helper.log");
     InitializeCriticalSection(&g_loglock);
     g_log = _wfopen(logp, L"w");
-    log_line("TekkenA11y helper 0.7.2 started");
+    log_line("TekkenA11y helper 1.0 started");
 
     speech_init();
     audio_init();

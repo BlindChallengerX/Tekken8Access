@@ -1,13 +1,20 @@
-﻿TekkenA11y 0.7.2 - screen reader and audio cues for Tekken 8
-=============================================================
+﻿TekkenA11y 1.0 - screen reader and audio cues for Tekken 8
+==========================================================
 
 Speech goes through Prism (NVDA, JAWS and others, or the Windows voice if no
 screen reader runs). A small helper program, speaker\TekkenA11yHelper.exe,
 starts and stops with the game by itself.
 
-Needs UE4SS for Tekken 8 in ...\TEKKEN 8\Polaris\Binaries\Win64\ (already
-installed on this PC). This folder lives in
-...\TEKKEN 8\Polaris\Binaries\Win64\Mods\TekkenA11y\
+Install
+-------
+1. Open the Tekken 8 folder: in Steam, right-click TEKKEN 8, Manage,
+   Browse local files. Go into Polaris, then Binaries, then Win64
+   (the folder with Polaris-Win64-Shipping.exe).
+2. Extract everything in the zip into that Win64 folder. Say yes if asked
+   to replace files. The zip brings UE4SS 3.0.1 (the mod loader, MIT
+   licence, github.com/UE4SS-RE/RE-UE4SS) and this mod, which ends up in
+   Win64\Mods\TekkenA11y\.
+3. Start Tekken 8 from Steam as usual. Speech starts at the title screen.
 
 What is read
 ------------
@@ -116,4 +123,5 @@ F9   read everything on screen
 F2   throw break sounds on / off (F10 is taken by the UE4SS console)
 F11  speech on / off
 
-Uninstall: delete the TekkenA11y folder above.
+Uninstall: delete Win64\Mods\TekkenA11y. To remove UE4SS too, also delete
+dwmapi.dll, UE4SS.dll and UE4SS-settings.ini from Win64.
