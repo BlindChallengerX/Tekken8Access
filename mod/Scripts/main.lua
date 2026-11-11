@@ -10,7 +10,7 @@
         F3 subtitles on/off, F4 Tekken Ball sound on/off, F5 fight status (Arcade Quest: objective and pick),
         Shift+F5 story fight control list,
         F6 beacon on/off, F7 repeat move with notes, F8 repeat last speech,
-        F2 throw break sounds on/off, F9 read screen, F11 speech on/off,
+        F2 throw break sounds on/off, Shift+F2 attack height sounds on/off, Ctrl+F2 hear them, F9 read screen, F11 speech on/off,
         Shift+F11 button names (Xbox / PlayStation / keyboard).
 
   Threads: everything that touches the game runs on the game thread, inside
@@ -84,6 +84,8 @@ bind("F7", Menus.repeat_move)
 bind("F8", function() Out.send("S1\t" .. (Out.last ~= "" and Out.last or "Nothing yet.")) end)
 bind("F9", read_screen)
 bind("F2", Fight.toggle_throws)
+bind("F2", Fight.toggle_attacks, "SHIFT")
+bind("F2", Fight.attack_demo, "CONTROL")
 bind("F11", function() Out.say(require("lib/pad").cycle(), true) end, "SHIFT")
 bind("F11", function()
     Out.enabled = not Out.enabled

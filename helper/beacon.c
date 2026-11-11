@@ -73,6 +73,14 @@ void beacon_frame(const float *v, int n) {
     LeaveCriticalSection(&s_lock);
 }
 
+float beacon_pan(void) {
+    init();
+    EnterCriticalSection(&s_lock);
+    float p = s_have ? s_pan : 0;
+    LeaveCriticalSection(&s_lock);
+    return p * 0.95f;      /* s_pan already spans 0.85: keep it off the hard edge */
+}
+
 void beacon_off(void) {
     init();
     EnterCriticalSection(&s_lock);

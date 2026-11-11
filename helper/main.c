@@ -9,6 +9,7 @@
  *   BL<tab>numbers  Tekken Ball: screen depth height dist (beacon.c)   BL0 stop
  *   T<tab>name      UI sound (edge, ...), throw break cue (throw1, throw2, throw12),
  *                   combo challenge (stepN, drop, clear)
+ *   A<tab>n         attack height sounds: watch player n (the opponent); A0 off
  *   C<tab>key<tab>v config value
  *   L<tab>text      write text to the log
  *
@@ -76,6 +77,7 @@ static void ui_sound(const char *name) {
        trill of four, so it is not taken for the low note */
     else if (!strcmp(name, "throw1")) tone(392, 392, 0.14f, 0.20f, 0, W_REED);
     else if (!strcmp(name, "throw2")) { tone(784, 784, 0.06f, 0.18f, 0, W_REED); tone_at(0.09f, 784, 784, 0.06f, 0.18f, 0, W_REED); }
+    else if (!strcmp(name, "atk_demo")) attack_demo();
     else if (!strcmp(name, "throw12"))
         for (int i = 0; i < 4; i++) tone_at(i * 0.055f, 1047, 1047, 0.035f, 0.17f, 0, W_REED);
 }
@@ -104,6 +106,8 @@ static void handle(char *line) {
         ball_frame(v, k);
     } else if (!strcmp(line, "BL0")) ball_off();
     else if (!strcmp(line, "T")) ui_sound(arg);
+    else if (!strcmp(line, "A")) attack_watch(atoi(arg));
+    else if (!strcmp(line, "A0")) attack_watch(-1);
     else if (!strcmp(line, "C")) {
         char *v = strchr(arg, '\t');
         if (v) { *v++ = 0; beacon_config(arg, strtof(v, NULL)); }
@@ -167,6 +171,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
 
     speech_init();
     audio_init();
+    attack_init();
     CloseHandle(CreateThread(NULL, 0, pipe_thread, NULL, 0, NULL));
 
     /* live as long as the game; give it 60 s to appear */

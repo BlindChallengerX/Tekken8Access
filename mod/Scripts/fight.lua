@@ -337,7 +337,17 @@ end
 -- game thread. Nothing here searches every tick: the HUD tick says a fight
 -- is on, fighters are looked up when it starts (and at most every 2 s while
 -- they are missing).
+-- Attack height sounds: the helper reads the opponent's move from the game's
+-- fight data itself (helper/attack.c); the mod only says whom to watch, and
+-- stops it outside fights and while a menu is open.
+Fight.attacks = true
+local atk_sent = nil
+local function attack_set(n)
+    if n ~= atk_sent then atk_sent = n; Out.send(n >= 0 and ("A\t" .. n) or "A0") end
+end
+
 local function stop()
+    attack_set(-1)
     if active then
         active = false
         -- drop the Practice HUD too: a later match must not use a widget
@@ -388,6 +398,7 @@ function Fight.tick()
     end
     if t >= next_hp then next_hp = t + 0.2; health() end
     if not menu_open and lib_safe() then throws() end
+    attack_set((Fight.attacks and not menu_open) and (1 - Fight.me) or -1)
     if menu_open then Out.send("F0"); Out.send("BL0"); ball_sent = false return end
     frame()
 end
@@ -421,6 +432,15 @@ function Fight.toggle_throws()
     Fight.throws = not Fight.throws
     Out.say(Fight.throws and "Throw break sounds on" or "Throw break sounds off", true)
 end
+
+function Fight.toggle_attacks()
+    Fight.attacks = not Fight.attacks
+    if not Fight.attacks then attack_set(-1) end
+    Out.say(Fight.attacks and "Attack height sounds on" or "Attack height sounds off", true)
+end
+
+-- Ctrl+F2: hear each attack sound with its name
+function Fight.attack_demo() Out.send("T\tatk_demo") end
 
 function Fight.toggle_ball()
     Fight.ball_cue = not Fight.ball_cue

@@ -253,3 +253,24 @@ tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file 
   UpdateCursor fires just before PlayAnimIn (was read twice). Chapter 10 resumes at a checkpoint
   on replay, so the 2-page "Operation Rebellion" pop-up only shows from the chapter start.
 - Main menu Hide UI (N / right stick click) leaves no widgets and the mod silent; not announced yet.
+
+## Attack height (helper/attack.c, 2026-11-11)
+- Nothing in UObjects or PolarisBlueprintLibrary gives the hit level (GetFighterAttackingDamageValue
+  is plain damage plus the 0x4000 throw bit). The fight data is native; the helper reads it with
+  ReadProcessMemory on its own thread, so the game thread does nothing new (fight frames stayed
+  16.7 ms avg, 22 ms max during the test).
+- [exe + 0x9b90bc0] -> battle object; +0x30 / +0x38 = block of PlayerNumber 0 / 1 (checked from both
+  sides). Block: +0x168 char id (6 Jin, 8 Kazuya), +0x511 attack type dword (TekkenBot's 0x4f1 moved
+  by 0x20: 0xa00005 high, 0x800002 mid, 0x200001 low, 0x600004 special mid, 0xc00007 unblockable,
+  0x60000a throw, 0xc00000 recovering), +0x550 move id (0x8001 standing; new id per move),
+  +0x3540 and +0x35c0 point back at the block.
+- The exe offset changes with patches: attack.c scans the exe's writable data for a pointer whose
+  +0x30/+0x38 are two blocks (60-80 ms), caches it in Mods\TekkenA11y\attack_root.txt with the PE
+  build stamp, and retries every 3 s while the fight is still loading. If the block layout itself
+  moves, the log says "no battle object found": find the offsets again with tools/memscan.py (pause
+  Practice mid-move, find 0x00800002, keep 0x00200001) and tools/ptrchain.py.
+- The type is set as the move starts (df+1: ~0.22 s before IsFighterAttacking). Mod: "A n" while a
+  fight is on and no menu is open, "A0" otherwise (fight.lua attack_set).
+- Practice: Opponent Actions = Mimic makes the dummy copy your moves at once (useful for tests;
+  resets when the game restarts). The Practice HUD's "Hit Properties" line shows the same data.
+- Not tested: online (rollback), sounds by the user's ear, levels against game audio.

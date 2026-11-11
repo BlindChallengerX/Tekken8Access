@@ -17,7 +17,7 @@ void speak_utf8(const char *text, int interrupt);
 void speech_stop(void);
 
 /* audio.c */
-enum { W_SINE, W_SQUARE, W_TRI, W_SAW, W_NOISE, W_WIND, W_REED, W_SOFT };
+enum { W_SINE, W_SQUARE, W_TRI, W_SAW, W_NOISE, W_WIND, W_REED, W_SOFT, W_SWISH };
 void audio_init(void);
 void tone(float f0, float f1, float seconds, float gain, float pan, int wave);
 void tone_at(float delay, float f0, float f1, float seconds, float gain, float pan, int wave);
@@ -32,3 +32,10 @@ void beacon_tick(void);
 void beacon_config(const char *key, float value);
 void ball_frame(const float *v, int n);
 void ball_off(void);
+float beacon_pan(void);              /* opponent's side of the screen, -0.85..0.85 (0 if unknown) */
+
+/* attack.c */
+void attack_init(void);
+void attack_watch(int player);       /* -1 = off */
+void attack_demo(void);
+void attack_sound(int code, float pan);

@@ -23,6 +23,7 @@
 
 typedef struct {
     int on; float delay; float t, len, f0, f1, gain, pan, phase; int wave;
+    float lp, bp;                     /* W_SWISH band-pass state */
 } Tone;
 typedef struct {
     float freq, gain, pan;            /* targets */
@@ -76,7 +77,7 @@ void tone_at(float delay, float f0, float f1, float seconds, float gain, float p
     }
     Tone *t = &s_tones[pick];
     t->on = 1; t->delay = delay; t->t = 0; t->len = seconds; t->f0 = f0; t->f1 = f1;
-    t->gain = gain; t->pan = pan < -1 ? -1 : pan > 1 ? 1 : pan; t->phase = 0; t->wave = wave;
+    t->gain = gain; t->pan = pan < -1 ? -1 : pan > 1 ? 1 : pan; t->phase = 0; t->wave = wave; t->lp = t->bp = 0;
     LeaveCriticalSection(&s_lock);
 }
 
@@ -119,10 +120,19 @@ static void mix(short *out, int frames) {
             float k = t->t / t->len;
             float f = t->f0 * powf(t->f1 / t->f0, k);
             /* short notes get a short release; W_SOFT fades in and out gently */
-            float att = t->wave == W_SOFT ? 0.015f : 0.004f;
-            float rel = t->wave == W_SOFT ? t->len * 0.5f : fminf(0.03f, t->len * 0.25f);
+            float att = t->wave == W_SOFT ? 0.015f : t->wave == W_SWISH ? t->len * 0.35f : 0.004f;
+            float rel = t->wave == W_SOFT || t->wave == W_SWISH ? t->len * 0.5f : fminf(0.03f, t->len * 0.25f);
             float env = fminf(1.0f, t->t / att) * fminf(1.0f, (t->len - t->t) / rel);
-            float s = osc(t->wave, t->phase) * env * t->gain;
+            float s;
+            if (t->wave == W_SWISH) {
+                /* swing whoosh: noise through a band-pass that follows the glide */
+                float c = 2 * sinf(3.14159265f * fminf(f, 8000.0f) / RATE);
+                float x = osc(W_NOISE, 0);
+                t->lp += c * t->bp;
+                t->bp += c * (x - t->lp - 0.5f * t->bp);
+                if (!isfinite(t->bp) || !isfinite(t->lp)) t->lp = t->bp = 0;
+                s = t->bp * 1.6f * env * t->gain;
+            } else s = osc(t->wave, t->phase) * env * t->gain;
             t->phase += f * dt; t->phase -= floorf(t->phase);
             buf[2 * n] += s * lg; buf[2 * n + 1] += s * rg;
             t->t += dt;
