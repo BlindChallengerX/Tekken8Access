@@ -77,7 +77,7 @@ local hud_w = nil
 function Fight.on_hud_tick(ctx)
     Prof.frame_gap()
     hud_t = os.clock()
-    if ctx and not UI.valid(hud_w) then hud_w = safe(function() return ctx:get() end) end
+    if ctx and not hud_w then hud_w = safe(function() return ctx:get() end) end
 end
 local function hud_up() return os.clock() - hud_t < 0.5 end
 
@@ -348,9 +348,23 @@ local function stop()
     end
 end
 
+-- Widgets kept from a screen that is torn down must never be touched again:
+-- a pause menu opened during a story movie, then polled by any_menu() after
+-- Skip Movie loaded the fight, closed the game silently (2026-11-11, same as
+-- the challenge rows on 2026-10-29). So everything kept is dropped whenever
+-- the fight HUD comes or goes; the hooks hand the widgets over again.
+local hud_was_up = false
+local function forget_widgets()
+    menus, hud_w = {}, nil
+    local M = package.loaded["menus"]
+    if M and M.forget_widgets then M.forget_widgets() end
+end
+
 function Fight.tick()
     local t = os.clock()
-    if not hud_up() then stop() return end
+    local up = hud_up()
+    if up ~= hud_was_up then hud_was_up = up; forget_widgets() end
+    if not up then stop() return end
     if refind then refind = false; f[0], f[1], next_find = nil, nil, 0 end
     if not ok_fighters() then
         stop()

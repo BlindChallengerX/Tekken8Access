@@ -10,7 +10,8 @@
         F3 subtitles on/off, F4 Tekken Ball sound on/off, F5 fight status (Arcade Quest: objective and pick),
         Shift+F5 story fight control list,
         F6 beacon on/off, F7 repeat move with notes, F8 repeat last speech,
-        F2 throw break sounds on/off, F9 read screen, F11 speech on/off.
+        F2 throw break sounds on/off, F9 read screen, F11 speech on/off,
+        Shift+F11 button names (Xbox / PlayStation / keyboard).
 
   Threads: everything that touches the game runs on the game thread, inside
   the game's own per-frame Blueprint ticks (frame() below). UE4SS 3.0.1 hung
@@ -26,6 +27,7 @@ local UI    = require("lib/ui")
 local Menus = require("menus")
 local Fight = require("fight")
 Fight.dir = MOD_DIR
+require("lib/pad").load(MOD_DIR)
 local Watch = require("watch")
 local TAM   = require("tam")
 local Prof  = require("lib/prof")
@@ -82,6 +84,7 @@ bind("F7", Menus.repeat_move)
 bind("F8", function() Out.send("S1\t" .. (Out.last ~= "" and Out.last or "Nothing yet.")) end)
 bind("F9", read_screen)
 bind("F2", Fight.toggle_throws)
+bind("F11", function() Out.say(require("lib/pad").cycle(), true) end, "SHIFT")
 bind("F11", function()
     Out.enabled = not Out.enabled
     Out.send("S1\t" .. (Out.enabled and "Speech on" or "Speech off"))

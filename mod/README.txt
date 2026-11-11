@@ -32,7 +32,14 @@ What is read
   the one playing), series tabs, track and stage music lists, preset options.
 - Story and cutscene subtitles are read as they appear (F3 turns them off).
 - Tekken Ball ball and damage info.
-- Keyboard keys in prompts are named ("J key, Battle", "Numpad 4 key, Talk").
+- Button prompts use controller names even when the game shows keyboard
+  keys: "X button, Punish. Or Left, Dodge." Xbox names by default; Shift+F11
+  switches to PlayStation names (Square, Cross ...) or to the keyboard keys
+  themselves, and the choice is remembered.
+- Story mode: timed button prompts (with a tone when they open, a success
+  tone and a miss tone), the Chapter 5 fighter choice, Chapter 10 radio lines,
+  notices and tutorial pop-ups. Shift+F5 reads the control list shown in
+  story fights.
 - Move list and sample combos: number, move name and the command in Tekken
   notation (d/f+1, hold f, 1+2 ...), then notes and damage when you rest.
   "then" marks the next part of a string or combo.
@@ -116,12 +123,14 @@ F3   subtitles on / off
 F4   Tekken Ball sound on / off
 F5   distance and health (and the ball in Tekken Ball; in Arcade Quest the
      objective and where your pick is)
+Shift+F5  story fights: read the control list
 F6   opponent beacon on / off (also the Arcade Quest beacon)
 F7   repeat the selected move with its notes (in a combo challenge: its steps)
 F8   repeat the last thing said
 F9   read everything on screen
 F2   throw break sounds on / off (F10 is taken by the UE4SS console)
 F11  speech on / off
+Shift+F11  button names: Xbox, PlayStation or keyboard keys
 
 Uninstall: delete Win64\Mods\TekkenA11y. To remove UE4SS too, also delete
 dwmapi.dll, UE4SS.dll and UE4SS-settings.ini from Win64.

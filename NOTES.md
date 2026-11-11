@@ -230,3 +230,26 @@ tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file 
 - Not yet run in game after the last build: prompt speech, pop-up, radio lines, Shift+F5, the pad
   button names, DLC story (WBP_UI_Story_DLC_C timeline menu is unread). tools: story_spy.lua,
   story_classes.lua, story.py, watch.py, fightwatch.py.
+
+## Button names (lib/pad.lua, 2026-11-11)
+- Prompts speak pad buttons even when the game draws keyboard keys. Style: Xbox (default),
+  PlayStation, or keyboard keys; Shift+F11 cycles, saved in Mods\TekkenA11y\pad.txt.
+- Pad pictures in rich text: <img id="btn_LB_xsx"/>, btn_A_ps5 (Xbox letters + family; LSB/RSB =
+  stick clicks). Hidden guide widgets keep a ps5 default picture with an Xbox pad, so the style is
+  never guessed from pictures.
+- Keyboard to pad, read off the main menu guide bar with keyboard and then pad: U I J K = X Y A B
+  (1 2 3 4), O P = LB RB (tabs, help pages), L ; = LT RT (banner), C = left stick click (Tekken
+  Shop), N = right stick click (Hide UI), WASD/arrows = directions. B = Menu button (pause) is
+  inferred, not seen. Unmapped keys (V, Insert, Home ...) are still said as keys.
+- kbd_NNN: NNN = scan code, +128 for extended keys (210 Insert, 199 Home, 200 Up arrow).
+- After a pad press Tekken 8 ignores the keyboard in menus too (even after a restart); bot tests
+  need the pad unplugged.
+- CRASH (2026-11-11): pause during a story movie, Skip Movie, game gone ~12 s later as the fight
+  loaded, no report. The movie's WBP_UI_Pause_C was kept (menus.lua pause_found, fight.lua
+  menus.pause) and polled after it was destroyed. Fix: fight.lua forget_widgets() drops every kept
+  widget (pause, practice HUD, battle HUD, TwoChoices) whenever the fight HUD comes or goes;
+  pause_seen no longer checks a kept widget. Survived the same path 4 times after the fix.
+- Help dialog: Pages/Marks are maps (no count in UE4SS); "page button visible" = more pages.
+  UpdateCursor fires just before PlayAnimIn (was read twice). Chapter 10 resumes at a checkpoint
+  on replay, so the 2-page "Operation Rebellion" pop-up only shows from the chapter start.
+- Main menu Hide UI (N / right stick click) leaves no widgets and the mod silent; not announced yet.

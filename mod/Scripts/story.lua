@@ -24,6 +24,7 @@
 ]]
 local Out = require("out")
 local UI  = require("lib/ui")
+local Pad = require("lib/pad")
 
 local Story = {}
 local safe = UI.safe
@@ -37,28 +38,22 @@ local function title_case(s)
 end
 
 -- ---------------------------------------------------------------- button prompts
--- Controller pictures are textures (T_UI_STE_BTN_PS5_SQUARE, _XSX_X ...)
-local PAD = { TRIANGLE = "Triangle", SQUARE = "Square", CROSS = "Cross", CIRCLE = "Circle",
-              A = "A button", B = "B button", X = "X button", Y = "Y button",
-              UP = "Up", DOWN = "Down", LEFT = "Left", RIGHT = "Right",
-              L1 = "L1", L2 = "L2", L3 = "L3", R1 = "R1", R2 = "R2", R3 = "R3",
-              LB = "LB", LT = "LT", RB = "RB", RT = "RT", L = "Left stick", R = "Right stick",
-              LS = "Left stick", RS = "Right stick", RS_UP = "Right stick up", RS_DOWN = "Right stick down",
-              RS_LEFT = "Right stick left", RS_RIGHT = "Right stick right" }
 -- what the prompt asks for when no picture can be read
-local TAG = { gui_use = "button 1", gui_left = "left", gui_right = "right", gui_up = "up", gui_down = "down" }
+local TAG = { gui_use = "the button", gui_left = "left", gui_right = "right", gui_up = "up", gui_down = "down" }
 
 local ste = { tags = {}, said = "", t = -10 }
 
 local function button_name(b, tag)
-    -- keyboard: the key picture is rich text in TB_Btn
+    -- controller: a button texture (T_UI_STE_BTN_PS5_SQUARE, _XSX_X ...)
+    local img = safe(function() return b.Rep_T_UI_STE_BTN end)
+    local shown = UI.valid(img) and safe(function() return img:IsVisible() end)
+    local tex = shown and safe(function() return img.Brush.ResourceObject:GetFName():ToString() end)
+    local nm = Pad.picture(tex and tex:match("^T_UI_STE_BTN_(.+)$"))
+    if nm then return nm end
+    -- keyboard: the key picture is rich text in TB_Btn; lib/pad names it as the pad button
     local raw = UI.text_of(safe(function() return b.TB_Btn end))
     local s = raw and raw:find("<img") and UI.clean(raw)
     if s and s ~= "" then return s end
-    -- controller: a button texture
-    local tex = safe(function() return b.Rep_T_UI_STE_BTN.Brush.ResourceObject:GetFName():ToString() end)
-    local key = tex and tex:match("^T_UI_STE_BTN_%u+%d?_(.+)$")
-    if key and PAD[key] then return PAD[key] end
     local t = tag and tag:match("{(.-)}") or ""
     return TAG[t] or (t ~= "" and t:gsub("gui_", ""):gsub("_", " ")) or "button"
 end
@@ -189,24 +184,25 @@ end
 
 -- ---------------------------------------------------------------- tutorial pop-up
 local help = { page = -1, t = -10 }
-local function help_read(w, with_title_hint)
+-- Pages is a map UE4SS cannot count; "page button visible" says there is more
+-- than one page. TB_icon order: previous page, next page, close.
+local function help_read(w, opening, page)
     local title = text(safe(function() return w.tb_title end))
-    local body, close = "", ""
+    local body, close, keys = "", "", {}
     for _, e in ipairs(UI.collect(w)) do
         if e.name == "TB_text" then body = UI.clean(e.text) or body end
         if e.name == "TB_Guide" then close = UI.clean(e.text) or close end
-    end
-    local keys = {}
-    for _, e in ipairs(UI.collect(w)) do
         if e.name == "TB_icon" then keys[#keys + 1] = UI.clean(e.text) or "" end
     end
-    local t = title .. ". " .. body
-    if with_title_hint then
-        local pages = safe(function() return w.Pages:GetArrayNum() end)
-        if type(pages) == "number" and pages > 1 and keys[1] and keys[2] then
-            t = t .. " Page 1 of " .. pages .. ": " .. keys[1] .. " and " .. keys[2] .. " turn pages."
+    local t
+    if opening then
+        t = title .. ". " .. body
+        if safe(function() return w["page button visible"] end) and keys[1] and keys[2] and #keys >= 3 then
+            t = t .. " More pages: " .. keys[1] .. " and " .. keys[2] .. " turn pages."
         end
         if close ~= "" and keys[#keys] then t = t .. " " .. keys[#keys] .. ": " .. close .. "." end
+    else
+        t = "Page " .. (page + 1) .. ". " .. body
     end
     Out.say(t, true)
 end
@@ -225,8 +221,13 @@ local function help_page(ctx, page)
     if not w or type(i) ~= "number" then return end
     if os.clock() - help.t < 0.3 or i == help.page then help.page = i return end      -- the open event reads page 1
     help.page = i
+    local asked = os.clock()
     Menus.touch()
-    Menus.defer(function() if UI.valid(w) then help_read(w, false) end end, 0.15)
+    Menus.defer(function()
+        -- the game sets the cursor just before PlayAnimIn: the open read covers it
+        if help.t >= asked then return end
+        if UI.valid(w) then help_read(w, false, i) end
+    end, 0.15)
 end
 
 -- ---------------------------------------------------------------- control list
@@ -240,14 +241,19 @@ local function guide_data(ctx, side, row, buttons, text_id)
     guide[r + 1] = { tag = type(b) == "string" and b or "", text = UI.arg_text(text_id) or "" }
 end
 
-local GUIDE_BTN = { gui_bank0_LP = "1", gui_bank0_RP = "2", gui_bank0_LK = "3", gui_bank0_RK = "4",
+local GUIDE_BTN = { gui_bank0_LP = 1, gui_bank0_RP = 2, gui_bank0_LK = 3, gui_bank0_RK = 4,
                     gui_bank0_heat = "Heat button", gui_bank0_rage = "Rage button" }
+local function guide_button(tag)
+    local b = GUIDE_BTN[tag]
+    if type(b) == "number" then return Pad.style == "keyboard" and (("UIJK"):sub(b, b) .. " key") or Pad.tekken(b) end
+    return b or tag:gsub("gui_bank0_", ""):gsub("_", " ")
+end
 function Story.controls()
     local parts = {}
     for _, g in ipairs(guide) do
         local keys = {}
-        for tag in g.tag:gmatch("{(.-)}") do keys[#keys + 1] = GUIDE_BTN[tag] or tag:gsub("gui_bank0_", ""):gsub("_", " ") end
-        if g.text ~= "" then parts[#parts + 1] = table.concat(keys, ", ") .. ": " .. g.text end
+        for tag in g.tag:gmatch("{(.-)}") do keys[#keys + 1] = (guide_button(tag)) end
+        if g.text ~= "" then parts[#parts + 1] = table.concat(keys, " and ") .. ": " .. g.text end
     end
     if #parts == 0 then return false end
     Out.say("Controls. " .. table.concat(parts, ". ") .. ".", true)
@@ -287,5 +293,7 @@ Story.OWN_CLASSES = { WBP_UI_Story_TwoChoices_C = true, WBP_UI_Story_TwoChoices_
                       WBP_UI_HelpDialog_C = true, WBP_UI_Story_STE_C = true, WBP_UI_Story_STE_Menu_C = true }
 
 function Story.init(menus) Menus = menus end
+-- the fight HUD came or went (fight.lua via Menus.forget_widgets): drop kept widgets
+function Story.forget() two.w = nil end
 
 return Story

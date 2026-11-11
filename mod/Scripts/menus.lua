@@ -56,8 +56,14 @@ end
 -- the pause menu button lives inside WBP_UI_Pause_C: walk up its outers
 -- (button -> widget tree -> owning widget ...) once to find it
 local pause_found = nil
+-- fight.lua calls this when the fight HUD comes or goes (screens rebuilt)
+function Menus.forget_widgets()
+    pause_found, Menus.practice_hud = nil, nil
+    local S = package.loaded["story"]; if S and S.forget then S.forget() end
+end
 local function pause_seen(ctx)
-    if UI.valid(pause_found) then return end
+    -- no early return on a kept pause_found: checking a widget from a screen
+    -- that is gone can close the game; walking up from the row is cheap
     local o = self_of(ctx)
     for _ = 1, 8 do
         o = o and safe(function() return o:GetOuter() end)

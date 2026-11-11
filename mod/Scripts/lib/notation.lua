@@ -12,6 +12,7 @@
   Output reads like written notation: "f+1+2", "b+2, 2", "d+1, then 3".
 ]]
 local N = {}
+local Pad = require("lib/pad")
 
 local DIRS = { [3] = "d/b", [4] = "d", [5] = "d/f", [6] = "b", [7] = "f", [8] = "u/b", [9] = "u", [10] = "u/f",
                [11] = "hold d/b", [12] = "hold d", [13] = "hold d/f", [14] = "hold b", [15] = "hold f",
@@ -28,6 +29,13 @@ for i = 1, 10 do KEYS[15 + i] = ("QWERTYUIOP"):sub(i, i) end
 for i = 1, 9 do KEYS[29 + i] = ("ASDFGHJKL"):sub(i, i) end
 for i = 1, 7 do KEYS[43 + i] = ("ZXCVBNM"):sub(i, i) end
 for i = 1, 10 do KEYS[58 + i] = "F" .. i end
+for k, v in pairs({ [39] = "Semicolon", [40] = "Apostrophe", [41] = "Grave", [43] = "Backslash", [51] = "Comma",
+                    [52] = "Period", [53] = "Slash", [55] = "Numpad star", [87] = "F11", [88] = "F12",
+                    [156] = "Numpad Enter", [157] = "Right Control", [181] = "Numpad slash", [184] = "Right Alt",
+                    [199] = "Home", [200] = "Up arrow", [201] = "Page Up", [203] = "Left arrow", [205] = "Right arrow",
+                    [207] = "End", [208] = "Down arrow", [209] = "Page Down", [210] = "Insert", [211] = "Delete" }) do
+    KEYS[k] = v
+end
 
 local function buttons(mask)
     local t = {}
@@ -51,7 +59,14 @@ local function icon(id)
     -- keyboard key pictures: kbd_NNN_en_US, NNN = the key's scan code
     -- (kbd_036 = J, kbd_048 = B, kbd_049 = N, checked against the screen)
     local sc = tonumber(id:match("^kbd_(%d+)"))
-    if sc then return { kind = "word", text = (KEYS[sc] or "keyboard") .. " key" } end
+    if sc then return { kind = "key", text = Pad.key(sc) or ((KEYS[sc] or "keyboard") .. " key") } end
+    -- pad pictures in rich text (named like the story prompt textures)
+    -- pad pictures: btn_<Xbox name>_<family> (btn_LB_xsx, btn_A_ps5)
+    local key, fam = id:match("^btn_(.+)_(%a+%d?)$")
+    if key then
+        local nm = Pad.picture(fam:upper() .. "_" .. key:upper())
+        if nm then return { kind = "key", text = nm } end
+    end
     return { kind = "word", text = (id:gsub("_", " ")) }
 end
 
@@ -79,6 +94,8 @@ function N.convert(s)
         elseif ic.kind == "dir" or ic.kind == "btn" then
             if prev == "dir" or prev == "btn" or prev == "space" then out[#out] = out[#out] .. "," end
             out[#out + 1] = ic.text
+        elseif ic.kind == "key" and prev == "key" and out[#out] == ic.text then
+            -- the same button twice (two keyboard keys bound to one pad button)
         else
             if (prev == "dir" or prev == "btn" or prev == "space") and ic.text == "then" then out[#out] = out[#out] .. "," end
             out[#out + 1] = ic.text

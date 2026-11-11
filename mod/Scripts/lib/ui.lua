@@ -32,6 +32,7 @@ function UI.clean(s)
     if s:find("<img") then s = N.convert(s) end
     s = s:gsub("<[^>]*>", " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
     s = s:gsub("%( ", "("):gsub(" %)", ")"):gsub("\226\128\139", "")   -- stray zero-width space in some names
+    s = s:gsub(" ([%.:,;!?])", "%1")    -- "LT ." after a button picture
     if s == "" or s:find("^err%(") then return nil end
     return s
 end
