@@ -8,6 +8,7 @@
 
   Keys: F1 / Shift+F1 Arcade Quest: next / previous person or machine,
         F3 subtitles on/off, F4 Tekken Ball sound on/off, F5 fight status (Arcade Quest: objective and pick),
+        Shift+F5 story fight control list,
         F6 beacon on/off, F7 repeat move with notes, F8 repeat last speech,
         F2 throw break sounds on/off, F9 read screen, F11 speech on/off.
 
@@ -73,6 +74,7 @@ end
 bind("F3", Menus.toggle_subtitles)
 bind("F4", Fight.toggle_ball)
 bind("F5", function() if not TAM.status() then Fight.status() end end)
+bind("F5", function() if not require("story").controls() then Out.say("No control list here.", true) end end, "SHIFT")
 bind("F1", function() TAM.next(1) end)
 bind("F1", function() TAM.next(-1) end, "SHIFT")
 bind("F6", Fight.toggle_beacon)

@@ -210,3 +210,23 @@ tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file 
 - The keyboard is ignored at the title screen after a restart while a controller is plugged in
   (every restart on 2026-10-29): someone has to press a controller button there. The attract
   movie (WBP_UI_StoryMoviePlayer_C, not in viewport) needs Esc; t8.py boot presses it.
+
+## Story mode special screens (story.lua, 2026-11-11)
+- Button prompts: WBP_UI_Story_STE_Menu_C:SetupButton(index, type, textId, texture, "{gui_use}") per
+  button, then AnimIn; AnimSuccess / AnimMiss end it (window ~5 s). Button_0N.TB_Btn = key picture
+  (kbd_NNN) on keyboard, Rep_T_UI_STE_BTN texture (T_UI_STE_BTN_PS5_SQUARE / _XSX_X) on a pad;
+  TB_GuideText = action. Texts TEXT_000_UI_MAINSTORY_INGAME_CMD_001..011 (Dodge, Block, Punish,
+  Counter, Follow-up attack, [Hold] Get up, Wind God Fist, three "I will not deny..." lines, Demon's Paw).
+  Spoken "U key, Punish. Or A key, Dodge." + tones open / round (success) / drop (miss).
+  Seen in game: Chapter 1 round 1 (Punish / Dodge). Guides: also Ch 5 (Leroy), 14, 15 (hold, mandatory).
+- Fighter choice: Chapter 5 tournament, WBP_UI_Story_TwoChoices_C (PlayAnimIn twice, second has names),
+  SelectItem_L/_R PlayAnimHover = cursor, ProfList rows. Tested: question, names, profiles.
+- Chapter 10: WBP_UI_HelpDialog_C tutorial pop-up (2 pages, O/P turn, K closes; UpdateCursor(page)),
+  IW MessageWin FrameIn (radio line) and NoticeWin FrameIn. No beacon there: the HUD is
+  WBP_UI_Story_IW_HUD_C, not HUD_S2, so fight.lua is idle (open item).
+- WBP_UI_HUD_ControlGuide_C:SetButtonData(side, row, "{gui_bank0_LP}", textId, kind) = the control list
+  of story fights; Shift+F5 reads it.
+- Maintenance does not run during story movies; preload() now marks its classes ready at once.
+- Not yet run in game after the last build: prompt speech, pop-up, radio lines, Shift+F5, the pad
+  button names, DLC story (WBP_UI_Story_DLC_C timeline menu is unread). tools: story_spy.lua,
+  story_classes.lua, story.py, watch.py, fightwatch.py.

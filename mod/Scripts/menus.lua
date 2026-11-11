@@ -43,6 +43,7 @@ function Menus.run_deferred()
     end
 end
 local function touched() Menus.last_menu_t = os.clock() end
+Menus.touch = touched
 
 -- ---------------------------------------------------------------- menus open in a fight
 -- The fight module mutes the beacon while these show; it gets the widgets
@@ -858,6 +859,10 @@ local pending = {}        -- path -> fn
 
 local important = {}      -- SPECS and add_pending paths (fixed hooks)
 for _, s in ipairs(SPECS) do pending[s[1]] = s[2]; important[s[1]] = true end
+-- the story's prompt, choice and message screens (story.lua)
+local Story = require("story")
+Story.init(Menus)
+for _, s in ipairs(Story.HOOKS) do pending[s[1]] = s[2]; important[s[1]] = true end
 
 local function try_register(path, fn)
     if registered[path] then return true end
@@ -958,6 +963,7 @@ function Menus.scan_classes()
                 if dyn then
                     for _, d in ipairs(dyn) do pending[path .. ":" .. d[1]] = d[2] end
                 end
+                if Story.OWN_CLASSES[short] then dyn = {} end
                 local is_dialog = short:find("Dialog") ~= nil and not short:find("Button")
                 -- banners animate on every cursor move without being the cursor
                 -- (so do whole menu tables: their select animation reads every row)
@@ -1005,6 +1011,7 @@ local PRELOAD = {
     "/Game/UI/Widget/JukeBox/WBP_UI_JukeBox",
     "/Game/UI/Widget/HUD/S2/WBP_UI_HUD_S2",
 }
+for _, p in ipairs(Story.PRELOAD) do PRELOAD[#PRELOAD + 1] = p end
 local preloaded = false
 function Menus.preload()
     if preloaded then return end
@@ -1014,6 +1021,11 @@ function Menus.preload()
         local short = p:match("([^/]+)$") .. "_C"
         local path = p .. "." .. short
         local ok = pcall(LoadAsset, path)
+        -- loaded now: its hooks register on the next maintenance pass, without
+        -- waiting for the slow retry of classes looked up before the preload
+        -- (maintenance does not run during story movies, so that retry left
+        -- the pause menu and the story prompts unhooked for a minute or two)
+        if ok then ready_cls[path], missed[path], Menus.pending_ready = true, nil, true end
         local dyn = DYN[short]
         if dyn then for _, d in ipairs(dyn) do pending[path .. ":" .. d[1]] = d[2]; important[path .. ":" .. d[1]] = true end end
         Out.log("preload " .. p .. " " .. tostring(ok))
