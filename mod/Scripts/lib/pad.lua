@@ -21,17 +21,19 @@ local NAMES = {
     xbox = { west = "X button", north = "Y button", south = "A button", east = "B button",
              l1 = "LB", r1 = "RB", l2 = "LT", r2 = "RT", l3 = "Left stick click", r3 = "Right stick click",
              start = "Menu button", select = "View button",
-             up = "Up", down = "Down", left = "Left", right = "Right", ls = "Left stick", rs = "Right stick" },
+             up = "Up", down = "Down", left = "Left", right = "Right", ls = "Left stick", rs = "Right stick",
+             dpad = "D-pad", dup = "D-pad up", ddown = "D-pad down", dleft = "D-pad left", dright = "D-pad right", none = "none" },
     playstation = { west = "Square", north = "Triangle", south = "Cross", east = "Circle",
              l1 = "L1", r1 = "R1", l2 = "L2", r2 = "R2", l3 = "L3", r3 = "R3",
              start = "Options button", select = "Create button",
-             up = "Up", down = "Down", left = "Left", right = "Right", ls = "Left stick", rs = "Right stick" },
+             up = "Up", down = "Down", left = "Left", right = "Right", ls = "Left stick", rs = "Right stick",
+             dpad = "D-pad", dup = "D-pad up", ddown = "D-pad down", dleft = "D-pad left", dright = "D-pad right", none = "none" },
 }
 -- Tekken buttons on a pad (default layout): 1 = west, 2 = north, 3 = south, 4 = east
 local TEKKEN = { "west", "north", "south", "east" }
 
--- keyboard scan code (+128 for extended keys) -> logical button. Read off the
--- main menu guide bar with the keyboard and then the pad in use (2026-11-11).
+-- keyboard scan code (+128 for extended keys) -> logical button, Keyboard
+-- Settings 1 (Options > Button Mapping, read 2026-11-11).
 local KEY_TO_BTN = {
     [17] = "up", [30] = "left", [31] = "down", [32] = "right",          -- W A S D
     [200] = "up", [208] = "down", [203] = "left", [205] = "right",      -- arrow keys
@@ -40,7 +42,7 @@ local KEY_TO_BTN = {
     [24] = "l1", [25] = "r1",                                           -- O P: tabs, pages
     [38] = "l2", [39] = "r2",                                           -- L ;: banner
     [46] = "l3", [49] = "r3",                                           -- C: Tekken Shop, N: hide UI / name tags
-    [48] = "start",                                                     -- B: pause / Arcade Quest menu
+    [48] = "start", [47] = "select",                                    -- B: Menu button, V: View button
 }
 
 -- pad picture names (T_UI_STE_BTN_PS5_SQUARE, _XSX_X ...) -> logical button
@@ -51,6 +53,8 @@ local PIC = {
     LB = "l1", RB = "r1", LT = "l2", RT = "r2", LS = "ls", RS = "rs", L = "ls", R = "rs",
     LSB = "l3", RSB = "r3",
     UP = "up", DOWN = "down", LEFT = "left", RIGHT = "right",
+    -- option screens: "nothing assigned", the D-pad
+    NOSELECT = "none", ARROW_ALL = "dpad", ARROW_UP = "dup", ARROW_DOWN = "ddown", ARROW_LEFT = "dleft", ARROW_RIGHT = "dright",
     OPTIONS = "start", MENU = "start", START = "start", VIEW = "select", SHARE = "select", CREATE = "select",
 }
 

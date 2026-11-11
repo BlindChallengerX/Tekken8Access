@@ -71,6 +71,12 @@ local function icon(id)
 end
 
 -- Turn a rich text string into speakable notation.
+-- the key itself for a keyboard key picture ("W key"), nil for anything else
+function N.key_name(rich)
+    local sc = rich and tonumber(rich:match('kbd_(%d+)'))
+    return sc and ((KEYS[sc] or "keyboard") .. " key") or nil
+end
+
 function N.convert(s)
     if not s or s == "" then return s end
     local out, prev = {}, nil

@@ -9,7 +9,7 @@
  *   BL<tab>numbers  Tekken Ball: screen depth height dist (beacon.c)   BL0 stop
  *   T<tab>name      UI sound (edge, ...), throw break cue (throw1, throw2, throw12),
  *                   combo challenge (stepN, drop, clear)
- *   A<tab>n         attack height sounds: watch player n (the opponent); A0 off
+ *   A<tab>me<tab>m  attack height sounds: me = player number, m 1 opponent / 2 own / 3 both; A0 off
  *   C<tab>key<tab>v config value
  *   L<tab>text      write text to the log
  *
@@ -106,8 +106,10 @@ static void handle(char *line) {
         ball_frame(v, k);
     } else if (!strcmp(line, "BL0")) ball_off();
     else if (!strcmp(line, "T")) ui_sound(arg);
-    else if (!strcmp(line, "A")) attack_watch(atoi(arg));
-    else if (!strcmp(line, "A0")) attack_watch(-1);
+    else if (!strcmp(line, "A")) {
+        char *m = strchr(arg, '\t');
+        attack_watch(atoi(arg), m ? atoi(m + 1) : 1);
+    } else if (!strcmp(line, "A0")) attack_watch(-1, 0);
     else if (!strcmp(line, "C")) {
         char *v = strchr(arg, '\t');
         if (v) { *v++ = 0; beacon_config(arg, strtof(v, NULL)); }

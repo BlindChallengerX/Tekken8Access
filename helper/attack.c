@@ -16,8 +16,10 @@
  * kept in attack_root.txt with the exe's build stamp. The type moves before
  * the hit: about 0.2 s ahead of the active frames for a 13-frame mid.
  *
- * The mod sends "A<tab>n" (watch player n, the opponent) while a fight is on
- * screen and no menu is open, "A0" otherwise. "T atk_demo" plays each sound
+ * The mod sends "A<tab>me<tab>mode" while a fight is on screen and no menu is
+ * open (me = the player's PlayerNumber; mode 1 = opponent's attacks, 2 = your
+ * own, 3 = both), "A0" otherwise. Your own attacks play on your side of the
+ * screen and quieter, so the opponent's stand out when both are on. "T atk_demo" plays each sound
  * with its name.
  */
 #include "access.h"
@@ -32,7 +34,7 @@
 #define OFF_SELF2  0x35c0
 #define OFF_P0     0x30
 
-static volatile LONG s_watch = -1;      /* player index to watch, -1 = off */
+static volatile LONG s_cfg = -1;        /* me * 4 + mode (1 opponent, 2 self, 3 both); -1 = off */
 static HANDLE s_proc;
 static uintptr_t s_exe, s_exe_size, s_root;
 static DWORD s_stamp;
@@ -145,8 +147,8 @@ static int find_root(void) {
    for low). Special mid = mid pluck then low. Unblockable = a low buzz.
    Panned to the opponent's side like the beacon. Throws keep their reed
    notes (ui_sound "throw1"). */
-void attack_sound(int code, float pan) {
-    const float g = 0.15f, s = 0.12f;
+void attack_sound(int code, float pan, float vol) {
+    const float g = 0.15f * vol, s = 0.12f * vol;
     switch (code) {
     case 5:  /* high */
         tone(1100, 2200, 0.09f, s, pan, W_SWISH);
@@ -179,7 +181,7 @@ static DWORD WINAPI demo_thread(LPVOID unused) {
     for (int i = 0; i < 5; i++) {
         speak(d[i].name, 1);
         Sleep(650);
-        attack_sound(d[i].code, 0);
+        attack_sound(d[i].code, 0, 1);
         Sleep(700);
     }
     return 0;
@@ -187,39 +189,48 @@ static DWORD WINAPI demo_thread(LPVOID unused) {
 void attack_demo(void) { CloseHandle(CreateThread(NULL, 0, demo_thread, NULL, 0, NULL)); }
 
 /* ------------------------------------------------------------------ watcher */
-void attack_watch(int player) { InterlockedExchange(&s_watch, player); }
+void attack_watch(int me, int mode) { InterlockedExchange(&s_cfg, mode > 0 && me >= 0 ? me * 4 + mode : -1); }
 
 static DWORD WINAPI watch_thread(LPVOID unused) {
     (void)unused;
     timeBeginPeriod(1);
-    unsigned last_move = 0, last_type = 0;
-    DWORD next_check = 0, last_cue = 0;
+    unsigned last_move[2] = { 0 }, last_type[2] = { 0 };
+    DWORD next_check = 0, last_cue[2] = { 0 };
     int was = -1;
     for (;;) {
-        int who = (int)s_watch;
-        if (who < 0) { was = -1; Sleep(20); continue; }
-        if (who != was) {               /* a fight (or side) started: (re)find the data */
+        int cfg = (int)s_cfg;
+        if (cfg < 0) { was = -1; Sleep(20); continue; }
+        if (cfg != was) {               /* a fight, side or mode started: (re)find the data */
             if (!open_game() || !find_root()) { Sleep(500); continue; }
-            was = who; last_move = 0; last_type = 0; next_check = 0;
+            was = cfg; next_check = 0;
+            memset(last_move, 0, sizeof last_move); memset(last_type, 0, sizeof last_type);
         }
+        int me = cfg / 4 > 1 ? 1 : cfg / 4, mode = cfg & 3;
+        /* slot 0 = opponent, slot 1 = you */
+        int idx[2] = { 1 - me, me }, want[2] = { mode & 1, mode & 2 };
         DWORD now = GetTickCount();
-        uintptr_t blk = rq(rq(s_exe + s_root) + OFF_P0 + 8 * who);
-        if (now >= next_check) {        /* still the same fight data? */
-            next_check = now + 500;
-            if (!valid_block(blk)) { was = -1; s_root = s_root && root_ok(s_root) ? s_root : 0; Sleep(200); continue; }
+        uintptr_t obj = rq(s_exe + s_root);
+        int broken = 0;
+        for (int k = 0; k < 2 && !broken; k++) {
+            if (!want[k]) continue;
+            uintptr_t blk = rq(obj + OFF_P0 + 8 * idx[k]);
+            if (now >= next_check && !valid_block(blk)) { broken = 1; break; }
+            unsigned char raw[OFF_MOVE + 4 - OFF_TYPE];
+            if (!rd(blk + OFF_TYPE, raw, sizeof raw)) { broken = 1; break; }
+            unsigned type, move;
+            memcpy(&type, raw, 4); memcpy(&move, raw + (OFF_MOVE - OFF_TYPE), 4);
+            int code = type & 0xff;
+            int height = (type >> 16) && (code == 1 || code == 2 || code == 4 || code == 5 || code == 7);
+            if (height && (move != last_move[k] || type != last_type[k]) && now - last_cue[k] > 60) {
+                float pan = beacon_pan();
+                attack_sound(code, k ? -pan : pan, k ? 0.6f : 1.0f);
+                last_cue[k] = now;
+                log_line("attack %s %d (type %08x move %x)", k ? "own" : "opponent", code, type, move);
+            }
+            last_move[k] = move; last_type[k] = type;
         }
-        unsigned char raw[OFF_MOVE + 4 - OFF_TYPE];
-        if (!rd(blk + OFF_TYPE, raw, sizeof raw)) { was = -1; Sleep(100); continue; }
-        unsigned type, move;
-        memcpy(&type, raw, 4); memcpy(&move, raw + (OFF_MOVE - OFF_TYPE), 4);
-        int code = type & 0xff;
-        int height = (type >> 16) && (code == 1 || code == 2 || code == 4 || code == 5 || code == 7);
-        if (height && (move != last_move || type != last_type) && now - last_cue > 60) {
-            attack_sound(code, beacon_pan());
-            last_cue = now;
-            log_line("attack %d (type %08x move %x)", code, type, move);
-        }
-        last_move = move; last_type = type;
+        if (now >= next_check) next_check = now + 500;     /* blocks rechecked twice a second */
+        if (broken) { was = -1; s_root = s_root && root_ok(s_root) ? s_root : 0; Sleep(200); continue; }
         Sleep(2);
     }
     return 0;

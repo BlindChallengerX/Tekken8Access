@@ -74,8 +74,11 @@ Fights
   note with a falling whoosh (block crouching), special mid = the middle note
   then the low one (blocks either way), unblockable = a low buzz (get away).
   The sound comes as the move starts, before it hits (about a fifth of a
-  second ahead for a quick mid). Throws keep their own sounds. Shift+F2 turns
-  them off and on; Ctrl+F2 plays each sound with its name.
+  second ahead for a quick mid). Throws keep their own sounds.
+  Shift+F2 chooses whose attacks you hear: the opponent's (the default),
+  your own, both, or off; the choice is remembered. Your own attacks play on
+  your side and a little quieter, so the opponent's stand out when both are
+  on. Ctrl+F2 plays each sound with its name.
 - Tekken Ball: a short dry tock for the ball. Panned to its side, higher
   when the ball is higher in the air (whole steps from the floor up to
   about 3.5 meters), ticking faster as it gets closer. F5 also says how far
@@ -137,7 +140,7 @@ F7   repeat the selected move with its notes (in a combo challenge: its steps)
 F8   repeat the last thing said
 F9   read everything on screen
 F2   throw break sounds on / off (F10 is taken by the UE4SS console)
-Shift+F2  attack height sounds on / off; Ctrl+F2 hear each one with its name
+Shift+F2  attack sounds: opponent's, yours, both or off; Ctrl+F2 hear each one with its name
 F11  speech on / off
 Shift+F11  button names: Xbox, PlayStation or keyboard keys
 

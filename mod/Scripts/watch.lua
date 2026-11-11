@@ -85,6 +85,9 @@ end
 local function jukebox(t)
     local jb = Watch.jb
     if not (jb and UI.valid(jb) and UI.shown(jb)) then
+        -- left the Jukebox: drop the widget before the screen is torn down
+        -- (polling a destroyed widget closes the game, NOTES.md CRASH lines)
+        Watch.jb = nil
         if next(last) then last = {} end
         return
     end

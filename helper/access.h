@@ -36,6 +36,6 @@ float beacon_pan(void);              /* opponent's side of the screen, -0.85..0.
 
 /* attack.c */
 void attack_init(void);
-void attack_watch(int player);       /* -1 = off */
+void attack_watch(int me, int mode); /* me = player's PlayerNumber; mode 1 opponent, 2 own, 3 both, 0 off */
 void attack_demo(void);
-void attack_sound(int code, float pan);
+void attack_sound(int code, float pan, float vol);

@@ -273,4 +273,7 @@ tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file 
   fight is on and no menu is open, "A0" otherwise (fight.lua attack_set).
 - Practice: Opponent Actions = Mimic makes the dummy copy your moves at once (useful for tests;
   resets when the game restarts). The Practice HUD's "Hit Properties" line shows the same data.
+- Modes (Shift+F2, Mods\TekkenA11yttack_mode.txt): opponent / own / both / off. Mod sends
+  "A me mode" (mode bits 1 opponent, 2 own); own attacks pan to -opponent pan at 0.6 volume.
+  All four checked in Practice with a Mimic dummy (2026-11-11).
 - Not tested: online (rollback), sounds by the user's ear, levels against game audio.

@@ -10,7 +10,7 @@
         F3 subtitles on/off, F4 Tekken Ball sound on/off, F5 fight status (Arcade Quest: objective and pick),
         Shift+F5 story fight control list,
         F6 beacon on/off, F7 repeat move with notes, F8 repeat last speech,
-        F2 throw break sounds on/off, Shift+F2 attack height sounds on/off, Ctrl+F2 hear them, F9 read screen, F11 speech on/off,
+        F2 throw break sounds on/off, Shift+F2 attack sounds: opponent / yours / both / off, Ctrl+F2 hear them, F9 read screen, F11 speech on/off,
         Shift+F11 button names (Xbox / PlayStation / keyboard).
 
   Threads: everything that touches the game runs on the game thread, inside
@@ -27,6 +27,7 @@ local UI    = require("lib/ui")
 local Menus = require("menus")
 local Fight = require("fight")
 Fight.dir = MOD_DIR
+Fight.load_attack_mode()
 require("lib/pad").load(MOD_DIR)
 local Watch = require("watch")
 local TAM   = require("tam")

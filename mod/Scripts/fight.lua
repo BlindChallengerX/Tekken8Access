@@ -337,17 +337,23 @@ end
 -- game thread. Nothing here searches every tick: the HUD tick says a fight
 -- is on, fighters are looked up when it starts (and at most every 2 s while
 -- they are missing).
--- Attack height sounds: the helper reads the opponent's move from the game's
+-- Attack height sounds: the helper reads the fighters' moves from the game's
 -- fight data itself (helper/attack.c); the mod only says whom to watch, and
 -- stops it outside fights and while a menu is open.
-Fight.attacks = true
+-- Shift+F2 cycles whose attacks are heard; kept in attack_mode.txt.
+local ATTACK_MODES = { "opponent", "own", "both", "off" }
+local ATTACK_BITS = { opponent = 1, own = 2, both = 3, off = 0 }
+local ATTACK_SAY = { opponent = "Attack sounds: opponent's attacks", own = "Attack sounds: your attacks",
+                     both = "Attack sounds: both fighters", off = "Attack sounds off" }
+Fight.attack_mode = "opponent"
+local function attack_file() return Fight.dir and (Fight.dir .. "\\attack_mode.txt") end
 local atk_sent = nil
-local function attack_set(n)
-    if n ~= atk_sent then atk_sent = n; Out.send(n >= 0 and ("A\t" .. n) or "A0") end
+local function attack_set(cmd)
+    if cmd ~= atk_sent then atk_sent = cmd; Out.send(cmd) end
 end
 
 local function stop()
-    attack_set(-1)
+    attack_set("A0")
     if active then
         active = false
         -- drop the Practice HUD too: a later match must not use a widget
@@ -398,7 +404,8 @@ function Fight.tick()
     end
     if t >= next_hp then next_hp = t + 0.2; health() end
     if not menu_open and lib_safe() then throws() end
-    attack_set((Fight.attacks and not menu_open) and (1 - Fight.me) or -1)
+    local bits = ATTACK_BITS[Fight.attack_mode] or 0
+    attack_set((bits > 0 and not menu_open) and ("A\t" .. Fight.me .. "\t" .. bits) or "A0")
     if menu_open then Out.send("F0"); Out.send("BL0"); ball_sent = false return end
     frame()
 end
@@ -433,10 +440,22 @@ function Fight.toggle_throws()
     Out.say(Fight.throws and "Throw break sounds on" or "Throw break sounds off", true)
 end
 
+function Fight.load_attack_mode()
+    local f = attack_file() and io.open(attack_file(), "r")
+    if not f then return end
+    local m = (f:read("l") or ""):match("^%s*(%a+)")
+    f:close()
+    if m and ATTACK_BITS[m] then Fight.attack_mode = m end
+end
+
 function Fight.toggle_attacks()
-    Fight.attacks = not Fight.attacks
-    if not Fight.attacks then attack_set(-1) end
-    Out.say(Fight.attacks and "Attack height sounds on" or "Attack height sounds off", true)
+    local i = 1
+    for k, v in ipairs(ATTACK_MODES) do if v == Fight.attack_mode then i = k end end
+    Fight.attack_mode = ATTACK_MODES[i % #ATTACK_MODES + 1]
+    if Fight.attack_mode == "off" then attack_set("A0") end
+    local f = attack_file() and io.open(attack_file(), "w")
+    if f then f:write(Fight.attack_mode, "\n"); f:close() end
+    Out.say(ATTACK_SAY[Fight.attack_mode], true)
 end
 
 -- Ctrl+F2: hear each attack sound with its name

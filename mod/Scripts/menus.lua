@@ -869,6 +869,10 @@ for _, s in ipairs(SPECS) do pending[s[1]] = s[2]; important[s[1]] = true end
 local Story = require("story")
 Story.init(Menus)
 for _, s in ipairs(Story.HOOKS) do pending[s[1]] = s[2]; important[s[1]] = true end
+-- Options and its sub-screens (options.lua)
+local Options = require("options")
+Options.init(Menus)
+for _, s in ipairs(Options.HOOKS) do pending[s[1]] = s[2]; important[s[1]] = true end
 
 local function try_register(path, fn)
     if registered[path] then return true end
@@ -969,7 +973,7 @@ function Menus.scan_classes()
                 if dyn then
                     for _, d in ipairs(dyn) do pending[path .. ":" .. d[1]] = d[2] end
                 end
-                if Story.OWN_CLASSES[short] then dyn = {} end
+                if Story.OWN_CLASSES[short] or Options.OWN_CLASSES[short] then dyn = {} end
                 local is_dialog = short:find("Dialog") ~= nil and not short:find("Button")
                 -- banners animate on every cursor move without being the cursor
                 -- (so do whole menu tables: their select animation reads every row)
@@ -1018,6 +1022,7 @@ local PRELOAD = {
     "/Game/UI/Widget/HUD/S2/WBP_UI_HUD_S2",
 }
 for _, p in ipairs(Story.PRELOAD) do PRELOAD[#PRELOAD + 1] = p end
+for _, p in ipairs(Options.PRELOAD) do PRELOAD[#PRELOAD + 1] = p end
 local preloaded = false
 function Menus.preload()
     if preloaded then return end
