@@ -103,6 +103,11 @@ end
 
 -- ---------------------------------------------------------------- fighter choice
 local two = { w = nil, open_t = -10, last = "" }
+-- The fighter the cursor was on when the choice screen closed is the one you
+-- play: in the Chapter 5 tournament the right-hand pick is PlayerNumber 1
+-- (King on the right, 2026-11-11). fight.lua makes that fighter "me" in the
+-- fights that follow and drops it once a fight without that fighter starts.
+Story.chosen = nil
 
 local function two_side(w, left)
     local it = safe(function() return w[left and "WBP_UI_Story_TwoChoices_SelectItem_L" or "WBP_UI_Story_TwoChoices_SelectItem_R"] end)
@@ -133,6 +138,7 @@ local function two_open(ctx)
             if UI.valid(it) and safe(function() return it:IsAnimationPlaying(it.Anim_Hover) end) then
                 local nm, prof = two_side(w, left)
                 two.last = nm
+                Story.chosen = nm
                 Out.queue("On " .. nm .. ". " .. prof)
             end
         end
@@ -149,6 +155,7 @@ local function two_hover(ctx)
         if not UI.valid(w) then return end
         local nm, prof = two_side(w, left)
         if nm == "" or nm == "Text Block" then return end
+        Story.chosen = nm
         if nm == two.last and os.clock() - two.open_t < 1 then return end
         two.last = nm
         -- the first hover comes with the screen: it follows the question

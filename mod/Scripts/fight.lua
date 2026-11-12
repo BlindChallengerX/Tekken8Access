@@ -173,12 +173,32 @@ local function resolve_side()
     return side ~= nil
 end
 
+-- story fighter choice (story.lua): the chosen fighter is me while fights
+-- with that fighter follow; the first fight without it ends the choice
+local function story_choice()
+    local S = package.loaded["story"]
+    local want = S and S.chosen
+    if not want then return nil end
+    want = want:lower()
+    for n = 0, 1 do
+        local nm = D.fighters[safe(function() return f[n].FighterId end)]
+        if nm and nm:lower() == want then return n end
+    end
+    S.chosen = nil
+    return nil
+end
+
 local function start()
     hp[0], hp[1] = nil, nil      -- health reads 0 until the round is set up
     tips = nil
     local M = package.loaded["menus"]
     Fight.me = (M and M.side) or 0
     side_known, side_tries, next_side = false, 0, 0
+    local chosen = story_choice()
+    if chosen then
+        Fight.me, side_known = chosen, true
+        Out.log("story choice: me = " .. chosen)
+    end
     local key = tostring(safe(function() return f[0].FighterId end)) .. ":" .. tostring(safe(function() return f[1].FighterId end))
     local challenge = safe(function() return f[1].PlayerNumber end) == 2
     if key ~= match_key and not challenge then
@@ -193,12 +213,19 @@ local function start()
 end
 
 local function health()
+    local now = {}
+    for n = 0, 1 do now[n] = safe(function() return f[n]:GetHPPercentage() end) end
+    -- both bars dropping to 0 in one read is the fight being torn down (story
+    -- fights after the K.O. was already said), not a double K.O.
+    local teardown = now[0] == 0 and now[1] == 0 and (hp[0] or 0) > 0 and (hp[1] or 0) > 0
     for n = 0, 1 do
-        local h = safe(function() return f[n]:GetHPPercentage() end)
+        local h = now[n]
         if type(h) == "number" and (hp[n] or h > 0) then
             local mine = n == Fight.me
             local was = hp[n] or h
-            if h <= 0 and was > 0 then
+            if teardown then
+                -- silent
+            elseif h <= 0 and was > 0 then
                 Out.say(mine and "You are down. K.O." or "Opponent K.O.")
             elseif h <= 25 and was > 25 then
                 Out.queue(mine and "Your health is low." or "Opponent health low.")
@@ -369,6 +396,20 @@ end
 -- Skip Movie loaded the fight, closed the game silently (2026-11-11, same as
 -- the challenge rows on 2026-10-29). So everything kept is dropped whenever
 -- the fight HUD comes or goes; the hooks hand the widgets over again.
+-- Story fights put the fight HUD up during the intro scenes, seconds before
+-- the round (Chapter 5: HUD at 23:51:20, IsBattleMain at 23:51:22.8 with the
+-- first real attack). In story mode the beacon, attack and throw cues wait
+-- for IsBattleMain (no player id, so safe while a fight loads; the library
+-- is only reached once both fighters exist). Other modes start with the HUD.
+local in_round, next_round_check, story_mode = false, 0, nil
+local function round_on(t)
+    if t < next_round_check then return in_round end
+    next_round_check = t + 0.1
+    if story_mode == nil then story_mode = safe(function() return L():IsStoryMode() end) == true end
+    in_round = not story_mode or safe(function() return L():IsBattleMain() end) == true
+    return in_round
+end
+
 local hud_was_up = false
 local function forget_widgets()
     menus, hud_w = {}, nil
@@ -379,7 +420,7 @@ end
 function Fight.tick()
     local t = os.clock()
     local up = hud_up()
-    if up ~= hud_was_up then hud_was_up = up; forget_widgets() end
+    if up ~= hud_was_up then hud_was_up = up; forget_widgets(); story_mode, next_round_check = nil, 0 end
     if not up then stop() return end
     if refind then refind = false; f[0], f[1], next_find = nil, nil, 0 end
     if not ok_fighters() then
@@ -403,10 +444,11 @@ function Fight.tick()
         side_known = resolve_side()
     end
     if t >= next_hp then next_hp = t + 0.2; health() end
-    if not menu_open and lib_safe() then throws() end
+    local quiet = menu_open or not round_on(t)
+    if not quiet and lib_safe() then throws() end
     local bits = ATTACK_BITS[Fight.attack_mode] or 0
-    attack_set((bits > 0 and not menu_open) and ("A\t" .. Fight.me .. "\t" .. bits) or "A0")
-    if menu_open then Out.send("F0"); Out.send("BL0"); ball_sent = false return end
+    attack_set((bits > 0 and not quiet) and ("A\t" .. Fight.me .. "\t" .. bits) or "A0")
+    if quiet then Out.send("F0"); Out.send("BL0"); ball_sent = false return end
     frame()
 end
 

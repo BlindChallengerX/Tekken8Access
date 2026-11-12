@@ -221,6 +221,18 @@ tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file 
   Seen in game: Chapter 1 round 1 (Punish / Dodge). Guides: also Ch 5 (Leroy), 14, 15 (hold, mandatory).
 - Fighter choice: Chapter 5 tournament, WBP_UI_Story_TwoChoices_C (PlayAnimIn twice, second has names),
   SelectItem_L/_R PlayAnimHover = cursor, ProfList rows. Tested: question, names, profiles.
+  The fighter under the cursor when the screen closes is the one you play, and the game puts it on
+  its own side (picked King on the right -> King is PlayerNumber 1). story.lua keeps the name in
+  Story.chosen; fight.lua start() makes the matching fighter "me" and skips resolve_side; the first
+  fight without that fighter, chapter select or the main menu clears it.
+- Story fights show WBP_UI_HUD_S2 during the intro scenes. PolarisBlueprintLibrary IsBattleMain
+  (no args) turns true when the round starts (Ch5: HUD 23:51:20, IsBattleMain 23:51:22.8 with the
+  first attack); IsMatchRound is true already with the HUD. In story mode (IsStoryMode) the beacon,
+  attack and throw cues wait for IsBattleMain; other modes still start with the HUD. Called
+  through a whole fight load by tools sampling at 4 Hz with no trouble. Not yet checked in the
+  early chapters where the user heard the beacon long before the fight.
+- Story fight end: both health bars read 0 in one tick as the fight is torn down; health() says
+  nothing then (it said both K.O. lines).
 - Chapter 10: WBP_UI_HelpDialog_C tutorial pop-up (2 pages, O/P turn, K closes; UpdateCursor(page)),
   IW MessageWin FrameIn (radio line) and NoticeWin FrameIn. No beacon there: the HUD is
   WBP_UI_Story_IW_HUD_C, not HUD_S2, so fight.lua is idle (open item).
@@ -277,3 +289,8 @@ tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file 
   "A me mode" (mode bits 1 opponent, 2 own); own attacks pan to -opponent pan at 0.6 volume.
   All four checked in Practice with a Mimic dummy (2026-11-11).
 - Not tested: online (rollback), sounds by the user's ear, levels against game audio.
+- Patch of 2026-11-11 17:39 (PE stamp 6adb1ad5): root moved to exe+0x9be1ba8 and the back pointers
+  to +0x3600 / +0x3680 (were 0x3540 / 0x35c0); +0x168, +0x511, +0x550 and the +0x30/+0x38 pair
+  unchanged. attack.c now tries the known offsets, then searches 0x3000-0x4000 of the block for
+  a pointer to itself repeated 0x80 later (fighter id < 200 as a check), and keeps the offset as a
+  third field in attack_root.txt.

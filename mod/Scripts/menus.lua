@@ -751,6 +751,7 @@ local chapter_last = ""
 local function on_chapter(ctx)
     local w = self_of(ctx)
     touched()
+    local S = package.loaded["story"]; if S then S.chosen = nil end
     Menus.defer(function()
         if not UI.valid(w) then return end
         local main = UI.clean(UI.text_of(safe(function() return w.TB_ChapterName_Main end)) or "") or ""
@@ -807,7 +808,7 @@ local SPECS = {
     -- the side chosen here decides which fighter the beacon treats as "me"
     { SD .. "OnSelectLeftSide", function() touched(); Menus.side = 0; Out.say("Left side") end },
     { SD .. "OnSelectRightSide", function() touched(); Menus.side = 1; Out.say("Right side") end },
-    { MM .. "WBP_UI_MainMenu_Menu_List.WBP_UI_MainMenu_Menu_List_C:play_hover", function(ctx) Menus.side = nil; generic_hover(ctx) end },
+    { MM .. "WBP_UI_MainMenu_Menu_List.WBP_UI_MainMenu_Menu_List_C:play_hover", function(ctx) Menus.side = nil; local S = package.loaded["story"]; if S then S.chosen = nil end; generic_hover(ctx) end },
     -- the battle HUD ticks only while a fight is on screen: free fight detection
     { "/Game/UI/Widget/HUD/S2/WBP_UI_HUD_S2.WBP_UI_HUD_S2_C:Tick", function(ctx) local F = package.loaded["fight"]; if F then F.on_hud_tick(ctx) end end },
     -- in-match pause menu (arcade, versus, story...)

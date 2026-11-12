@@ -9,7 +9,10 @@
  *   block + 0x511  attack type (dword; low byte 1 low, 2 mid, 4 special mid,
  *                  5 high, 7 unblockable, 0x0a throw; 0xc00000 = recovering)
  *   block + 0x550  move id (changes with every move, so jab, jab plays twice)
- *   block + 0x3540, + 0x35c0  pointers back to the block (used to recognise it)
+ *   block + self, + self + 0x80  pointers back to the block (used to recognise
+ *                  it; self was 0x3540 until the 2026-11-11 patch moved it to
+ *                  0x3600, so it is searched for when neither fits)
+ *   block + 0x168  fighter id (small number, a sanity check)
  *
  * root changes with every game patch, so it is found by scanning the exe's
  * writable data for a pointer whose +0x30 and +0x38 are two such blocks, and
@@ -30,15 +33,18 @@
 
 #define OFF_TYPE   0x511
 #define OFF_MOVE   0x550
-#define OFF_SELF1  0x3540
-#define OFF_SELF2  0x35c0
+#define OFF_CHAR   0x168
 #define OFF_P0     0x30
+#define SELF_LO    0x3000          /* where the back pointers may be searched for */
+#define SELF_HI    0x4000
 
 static volatile LONG s_cfg = -1;        /* me * 4 + mode (1 opponent, 2 self, 3 both); -1 = off */
 static HANDLE s_proc;
 static uintptr_t s_exe, s_exe_size, s_root;
 static DWORD s_stamp;
 static DWORD s_next_scan;               /* the object only exists once a fight has loaded: retry */
+static uintptr_t s_self = 0x3600;       /* back pointer offset in this build */
+static const uintptr_t KNOWN_SELF[] = { 0x3600, 0x3540 };
 
 static int rd(uintptr_t a, void *out, size_t n) {
     SIZE_T got = 0;
@@ -47,8 +53,26 @@ static int rd(uintptr_t a, void *out, size_t n) {
 static uintptr_t rq(uintptr_t a) { uintptr_t v = 0; return rd(a, &v, 8) ? v : 0; }
 static int heap_ptr(uintptr_t v) { return v >= 0x10000000000ull && v < 0x7ff000000000ull && !(v & 7); }
 
-static int valid_block(uintptr_t b) {
-    return heap_ptr(b) && rq(b + OFF_SELF1) == b && rq(b + OFF_SELF2) == b;
+static int block_at(uintptr_t b, uintptr_t self) {
+    unsigned id = 0xffffffff;
+    return heap_ptr(b) && rq(b + self) == b && rq(b + self + 0x80) == b
+        && rd(b + OFF_CHAR, &id, 4) && id < 200;
+}
+static int valid_block(uintptr_t b) { return block_at(b, s_self); }
+
+/* the back pointer offset of a pair of blocks: the known ones first, then a
+   search of the block for a pointer to itself repeated 0x80 further on */
+static uintptr_t find_self(uintptr_t b0, uintptr_t b1) {
+    for (size_t i = 0; i < sizeof KNOWN_SELF / sizeof *KNOWN_SELF; i++)
+        if (block_at(b0, KNOWN_SELF[i]) && block_at(b1, KNOWN_SELF[i])) return KNOWN_SELF[i];
+    static uintptr_t w[(SELF_HI - SELF_LO + 0x88) / 8];
+    if (!rd(b0 + SELF_LO, w, sizeof w)) return 0;
+    for (size_t k = 0; k + 16 < sizeof w / 8; k++)
+        if (w[k] == b0 && w[k + 16] == b0) {
+            uintptr_t self = SELF_LO + k * 8;
+            if (block_at(b0, self) && block_at(b1, self)) return self;
+        }
+    return 0;
 }
 
 static int open_game(void) {
@@ -90,6 +114,16 @@ static int root_ok(uintptr_t root) {
     return heap_ptr(obj) && valid_block(rq(obj + OFF_P0)) && valid_block(rq(obj + OFF_P0 + 8));
 }
 
+/* place (in the exe) holds v; v + 0x30 / + 0x38 two blocks? -> root or 0, sets s_self */
+static uintptr_t root_with_pair(uintptr_t place, uintptr_t v) {
+    uintptr_t pair[2];
+    if (!rd(v + OFF_P0, pair, 16) || !heap_ptr(pair[0]) || !heap_ptr(pair[1]) || pair[0] == pair[1]) return 0;
+    uintptr_t self = find_self(pair[0], pair[1]);
+    if (!self) return 0;
+    s_self = self;
+    return place - s_exe;
+}
+
 /* scan the exe's writable data for the battle object pointer (a few seconds, once per build) */
 static uintptr_t scan_root(void) {
     DWORD t0 = GetTickCount();
@@ -105,11 +139,10 @@ static uintptr_t scan_root(void) {
                 for (size_t i = 0; i < n / 8; i++) {
                     uintptr_t v = buf[i];
                     if (!heap_ptr(v)) continue;
-                    uintptr_t pair[2];
-                    if (!rd(v + OFF_P0, pair, 16) || !heap_ptr(pair[0]) || !heap_ptr(pair[1]) || pair[0] == pair[1]) continue;
-                    if (valid_block(pair[0]) && valid_block(pair[1])) {
-                        uintptr_t root = p + i * 8 - s_exe;
-                        log_line("attack: root exe+%llx found in %lu ms", (unsigned long long)root, GetTickCount() - t0);
+                    uintptr_t root = root_with_pair(p + i * 8, v);
+                    if (root) {
+                        log_line("attack: root exe+%llx (blocks point back at +%llx) found in %lu ms",
+                                 (unsigned long long)root, (unsigned long long)s_self, GetTickCount() - t0);
                         return root;
                     }
                 }
@@ -126,9 +159,11 @@ static int find_root(void) {
     wchar_t path[MAX_PATH]; root_file(path);
     FILE *f = _wfopen(path, L"r");
     if (f) {
-        unsigned long stamp = 0; unsigned long long off = 0;
-        if (fscanf(f, "%lx %llx", &stamp, &off) == 2 && stamp == s_stamp && root_ok((uintptr_t)off)) {
-            fclose(f); s_root = (uintptr_t)off; return 1;
+        unsigned long stamp = 0; unsigned long long off = 0, self = 0;
+        int n = fscanf(f, "%lx %llx %llx", &stamp, &off, &self);
+        if (n >= 2 && stamp == s_stamp) {
+            if (n == 3) s_self = (uintptr_t)self;
+            if (root_ok((uintptr_t)off)) { fclose(f); s_root = (uintptr_t)off; return 1; }
         }
         fclose(f);
     }
@@ -137,7 +172,7 @@ static int find_root(void) {
     if (!r) { s_next_scan = GetTickCount() + 3000; return 0; }
     s_root = r;
     f = _wfopen(path, L"w");
-    if (f) { fprintf(f, "%08lx %llx\n", s_stamp, (unsigned long long)r); fclose(f); }
+    if (f) { fprintf(f, "%08lx %llx %llx\n", s_stamp, (unsigned long long)r, (unsigned long long)s_self); fclose(f); }
     return 1;
 }
 
