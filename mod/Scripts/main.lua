@@ -1,5 +1,5 @@
 --[[
-  TekkenA11y 1.0 - screen reader and audio cues for Tekken 8 (UE4SS Lua mod)
+  Tekken 8 Access 1.0.1 (folder TekkenA11y) - screen reader and audio cues for Tekken 8 (UE4SS Lua mod)
 
   Speech and sounds come from speaker\TekkenA11yHelper.exe (Prism + a small
   synth), fed through a named pipe, so there is no file polling between a
@@ -33,7 +33,7 @@ local Watch = require("watch")
 local TAM   = require("tam")
 local Prof  = require("lib/prof")
 
-print("[A11y] TekkenA11y 1.0 loading\n")
+print("[A11y] Tekken 8 Access 1.0.1 loading\n")
 
 -- helper process: one instance, exits with the game
 if MOD_DIR then
@@ -187,5 +187,5 @@ LoopAsync(500, function()
     return false
 end)
 
-Out.say("Tekken accessibility loaded.")
+Out.say("Tekken 8 Access loaded.")
 print("[A11y] loaded\n")
