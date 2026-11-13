@@ -653,12 +653,57 @@ local function read_dialog(w)
     -- the default button is selected just before the dialog animates in:
     -- read the question first, then that button again
     local btn = os.clock() - generic_t < 0.8 and generic_last or nil
+    -- a menu with no question (the ghost battle machine): the text is just
+    -- the choices, starting with the highlighted one; say it and how many
+    if btn and t:sub(1, #btn + 2) == btn .. ", " then
+        local _, commas = t:gsub(", ", "")
+        Out.say(btn .. ", " .. (commas + 1) .. " choices", true)
+        return
+    end
     Out.say(t, true)
     if btn and btn ~= t then Out.queue(btn) end
 end
 local function on_dialog(ctx)
     local w = self_of(ctx)
     if w then read_dialog(w) end
+end
+
+-- ---------------------------------------------------------------- fight result
+-- WBP_UI_Result_S3_C (after a match: ghost battles, arcade, versus ...):
+-- OnSetFighterName(text id) = the winner, OnPlayAnimIn when the screen comes
+-- up, then (~1.5 s later, once it takes input) OnSetSelectMenuCursor(i) for
+-- the menu (Rematch, Fight Next Opponent, End Battle ...: TB_title_ON rows
+-- in tree order). PlayDispatchMenu fires every frame: not hooked.
+local result = { winner = nil, rows = nil, t = -10 }
+local function result_winner(ctx, id)
+    local n = UI.arg_text(id)
+    -- names come in capitals ("KING"): say them as names
+    if n and n == n:upper() then n = n:lower():gsub("(%a)([%w'%-]*)", function(a, b) return a:upper() .. b end) end
+    result.winner = n
+end
+local function result_in(ctx)
+    result.rows, result.t = nil, os.clock()
+    touched()
+    saw_menu("result", self_of(ctx))      -- the fight HUD stays up behind it: mute the beacon
+    Out.say((result.winner and (result.winner .. " wins.") or "Result."), true)
+end
+local function result_cursor(ctx, index)
+    local w = self_of(ctx)
+    local i = arg(index)
+    if not w or type(i) ~= "number" then return end
+    touched()
+    if not result.rows then
+        result.rows = {}
+        for _, e in ipairs(UI.collect(w)) do
+            if e.name == "TB_title_ON" then
+                local c = UI.clean(e.text)
+                if c then result.rows[#result.rows + 1] = c end
+            end
+        end
+    end
+    local t = result.rows[i + 1]
+    if not t then return end
+    if os.clock() - result.t < 4 then Out.queue(t) else Out.say(t) end
 end
 
 -- ---------------------------------------------------------------- text events
@@ -810,7 +855,16 @@ local SPECS = {
     -- the side chosen here decides which fighter the beacon treats as "me"
     { SD .. "OnSelectLeftSide", function() touched(); Menus.side = 0; Out.say("Left side") end },
     { SD .. "OnSelectRightSide", function() touched(); Menus.side = 1; Out.say("Right side") end },
-    { MM .. "WBP_UI_MainMenu_Menu_List.WBP_UI_MainMenu_Menu_List_C:play_hover", function(ctx) Menus.side = nil; local S = package.loaded["story"]; if S then S.chosen = nil end; generic_hover(ctx) end },
+    -- (it opens silently: no side event until the cursor moves)
+    { SD .. "FrameIn", function() touched(); Out.say("Choose play side: left or right.", true) end },
+    { MM .. "WBP_UI_MainMenu_Menu_List.WBP_UI_MainMenu_Menu_List_C:play_hover", function(ctx)
+        Menus.side = nil
+        local S = package.loaded["story"]; if S then S.chosen = nil end
+        -- the mode about to start (tam.lua names Super Ghost Battle by it)
+        local w = self_of(ctx)
+        Menus.main_row = UI.valid(w) and UI.clean(UI.text_of(safe(function() return w.TB_title_ON end)) or "") or nil
+        generic_hover(ctx)
+    end },
     -- the battle HUD ticks only while a fight is on screen: free fight detection
     { "/Game/UI/Widget/HUD/S2/WBP_UI_HUD_S2.WBP_UI_HUD_S2_C:Tick", function(ctx) local F = package.loaded["fight"]; if F then F.on_hud_tick(ctx) end end },
     -- in-match pause menu (arcade, versus, story...)
@@ -837,6 +891,10 @@ local SPECS = {
     { "/Game/UI/Widget/Dialog/WBP_UI_Dialog_LR_Menu.WBP_UI_Dialog_LR_Menu_C:PlayAnimIn", function(ctx) on_dialog(ctx) end },
     -- dialog buttons (Yes / No / OK); the LR variant inherits Select
     { "/Game/UI/Widget/Dialog/WBP_UI_Dialog_TextButton.WBP_UI_Dialog_TextButton_C:Select", generic_hover },
+    -- the result screen after a match
+    { "/Game/UI/Widget/Result/S3/WBP_UI_Result_S3.WBP_UI_Result_S3_C:OnSetFighterName", result_winner },
+    { "/Game/UI/Widget/Result/S3/WBP_UI_Result_S3.WBP_UI_Result_S3_C:OnPlayAnimIn", result_in },
+    { "/Game/UI/Widget/Result/S3/WBP_UI_Result_S3.WBP_UI_Result_S3_C:OnSetSelectMenuCursor", result_cursor },
     -- (the information bar's OnSetMessage is main.lua's bootstrap hook: it
     -- calls Menus.on_info_bar)
 }
@@ -1039,6 +1097,7 @@ local PRELOAD = {
     "/Game/UI/Widget/JukeBox/WBP_UI_JukeBox_PresetWin",
     "/Game/UI/Widget/JukeBox/WBP_UI_JukeBox",
     "/Game/UI/Widget/HUD/S2/WBP_UI_HUD_S2",
+    "/Game/UI/Widget/Result/S3/WBP_UI_Result_S3",
 }
 for _, p in ipairs(Story.PRELOAD) do PRELOAD[#PRELOAD + 1] = p end
 for _, p in ipairs(Options.PRELOAD) do PRELOAD[#PRELOAD + 1] = p end

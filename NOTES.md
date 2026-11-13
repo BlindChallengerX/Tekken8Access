@@ -352,3 +352,30 @@ tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file 
 - Stage select: Random sits between Descent into Subconscious and Arena; Up/Down move rows and the mod does
   not speak those moves. Baobab Horizon (DLC, not owned) opens a Tekken Shop dialog
   (WBP_UI_Store_SelectDialog_Impl_C) that the mod did not read: Esc closes it. Never press Enter there.
+
+## Super Ghost Battle and the result screen (2026-11-13)
+- Main menu "Super Ghost Battle" loads the TAM ghost room (/Game/TrueArcadeMode/Maps/Ghost/TAM_Ghost_Npc):
+  tam.lua runs as in Arcade Quest; its intro names the mode from Menus.main_row (the main menu row last
+  hovered). The room reports itself starting twice while loading: intro guarded for 15 s.
+- You start standing at the ghost battle machine (BP_TAM_NPC_GhostMenu_C), so collision_npc never changes and
+  the approach line never came; F1/F5 now say "in reach" whenever collision_npc is the pick.
+- Machine menu = WBP_UI_Dialog_C (rows Dialog_TextButton). A question-less dialog is now read as "<highlighted
+  row>, N choices". How to Play = WBP_UI_HelpDialog_C (3 pages, read by story.lua). Downloaded Ghost with none
+  = dialog "No Ghosts available to fight.".
+- Lists /Game/UI/Widget/TAM/WBP_UI_Ghost_PLAYERmenu_C / _DLmenu_C / _CPUmenu_C (Event_Start on open,
+  SelectIndex, TB_num "10 / 100" = not a row count, TB_Non reports visible even under a full list). Rows
+  _PLAYERlist_C / _DLlist_C / _CPUlist_C: OnButtonSelect = cursor; TB_Name, TB_DATA_date, TB_DATA_POW,
+  FighterId, rank (number), Rep_T_UI_CMN_RNK_S (T_UI_CMN_RNK_S_<japanese rank>), IsWon, IsTreasure,
+  img_Icon_boxclose / boxopen. Rank numbers follow the English list (0 Beginner, 23 Kishin, 24 Bushin checked
+  against the pictures); hakaishin01-08 pictures exist past God of Destruction (named "God of Destruction N").
+- Choosing a ghost: side select, char select, stage select, fight (the ghost battle shows WBP_UI_Practice_S2_C
+  too). An Enter right as the list opens is ignored by the game.
+- WBP_UI_SideSelect_C:FrameIn = opened (title "CHOOSE PLAY SIDE"); no side event until the cursor moves.
+  Esc there asks "return to the SUPER GHOST BATTLE?".
+- Result /Game/UI/Widget/Result/S3/WBP_UI_Result_S3_C (preloaded): OnSetFighterName(text id, the winner,
+  capitals), OnSetSelectMenuSide, OnAddSelectMenuItems, OnPlayAnimIn, then ~1.5 s later
+  OnSetSelectMenuCursor(0..2) = Rematch / Fight Next Opponent / End Battle (TB_title_ON rows in tree order).
+  PlayDispatchMenu fires every frame (not hooked). Enter at once = Rematch. The fight HUD stays up behind it,
+  so result_in hands it to Fight.saw_menu (beacon muted).
+- Rounds lost on time say nothing (health 3% -> 100%, no K.O.); a real K.O. is announced. Not done: a
+  "time out" line, side select's initial side.

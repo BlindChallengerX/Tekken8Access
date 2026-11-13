@@ -123,6 +123,28 @@ Arcade Quest
   (Head Out) reads each arcade, and "locked".
 - The pause menu in Arcade Quest is B on the keyboard.
 
+Super Ghost Battle
+------------------
+- From the main menu you walk into a ghost arcade, like Arcade Quest. F1
+  picks the nearest ghost or the ghost battle machine and says how far and
+  which way; the beacon leads you there. Close enough, you hear the name and
+  the button ("Ghost battle machine, A button, Battle"); F1 and F5 say
+  "in reach" while you can use it.
+- The machine's menu reads each choice with its description: Your Ghost,
+  Spar with Ghost, Change Ghost AI Settings, Downloaded Ghost, CPU Ghost,
+  How to Play (all pages).
+- Ghost lists read each ghost: name, fighter, rank, Tekken Power or date,
+  and "beaten" or "treasure" (a CPU ghost whose chest you have not won yet).
+  An empty list says so.
+- Then side select ("Choose play side"), character and stage select, and the
+  fight as usual.
+
+After a fight
+-------------
+- The result screen says who won ("King wins.") and reads its menu:
+  Rematch, Fight Next Opponent, End Battle (End Battle goes back to the
+  ghost arcade). The beacon is quiet on this screen.
+
 Character Episodes
 ------------------
 - The character list reads each name with "cleared" or "locked", then full

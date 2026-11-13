@@ -25,6 +25,7 @@
 ]]
 local Out = require("out")
 local UI  = require("lib/ui")
+local D   = require("data")
 
 local TAM = {}
 local safe = UI.safe or function(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -140,6 +141,11 @@ local function where(t)
     return (m < 1 and "close" or (m .. (m == 1 and " meter " or " meters ") .. dir))
 end
 
+local function in_reach(t)
+    local c = UI.valid(player) and safe(function() return player.collision_npc end)
+    return t and UI.valid(c) and key(c) == t.key
+end
+
 local function describe(t)
     local s = t.name
     if t.note then s = s .. ", " .. t.note end
@@ -167,7 +173,7 @@ function TAM.next(step)
     sel = sel + step
     if sel > #targets then sel = 1 elseif sel < 1 then sel = #targets end
     local t = targets[sel]
-    Out.say(describe(t) .. ", " .. where(t), true)
+    Out.say(describe(t) .. ", " .. (in_reach(t) and "in reach" or where(t)), true)
     return true
 end
 
@@ -190,7 +196,7 @@ function TAM.status()
     local o = objective_text()
     if o then parts[#parts + 1] = "Objective: " .. o:gsub("[.!?]$", "") end
     local t = targets[sel]
-    if t and UI.valid(t.actor) then parts[#parts + 1] = describe(t) .. ", " .. where(t)
+    if t and UI.valid(t.actor) then parts[#parts + 1] = describe(t) .. ", " .. (in_reach(t) and "in reach" or where(t))
     else parts[#parts + 1] = "Nobody picked. F1 picks the nearest." end
     Out.say(table.concat(parts, ". "), true)
     return true
@@ -322,7 +328,15 @@ function TAM.tick()
     if not started then
         started = true
         next_scan = os.clock() + 1.5      -- let the room finish loading
-        Out.queue("Arcade Quest. F1 picks a person or machine to walk to.")
+        local M = package.loaded["menus"]
+        -- the room can report itself starting twice while it loads
+        if os.clock() - (TAM.intro_t or -100) < 15 then
+        elseif M and M.main_row == "Super Ghost Battle" then
+            Out.queue("Super Ghost Battle. F1 picks a ghost or the ghost battle machine to walk to.")
+        else
+            Out.queue("Arcade Quest. F1 picks a person or machine to walk to.")
+        end
+        TAM.intro_t = os.clock()
     end
     if os.clock() >= next_scan then scan() end
     proximity()
@@ -360,6 +374,63 @@ local function on_map_icon(ctx)
 end
 local function on_map(ctx) map_w = safe(function() return ctx:get() end) end
 
+-- Ghost lists (the ghost battle machine: Your Ghost, Downloaded Ghost, CPU
+-- Ghost). WBP_UI_Ghost_PLAYERmenu_C / _DLmenu_C / _CPUmenu_C: Event_Start when
+-- the list opens, TB_Non = "No one to show on list". Rows
+-- WBP_UI_Ghost_PLAYERlist_C / _DLlist_C / _CPUlist_C: OnButtonSelect = cursor;
+-- TB_Name, TB_DATA_date, TB_DATA_POW (Tekken Power), rank (number),
+-- Rep_T_UI_CMN_RNK_S (rank picture), FighterId, IsWon, IsTreasure (CPU: the
+-- chest stays shut until the ghost is beaten).
+local GHOST_TITLE = { PLAYER = "My Ghost List", DL = "Downloaded Ghost List", CPU = "CPU Ghost List" }
+local list_t, row_t = -10, -10
+local function title_case(s)
+    return (s:lower():gsub("(%a)([%w']*)", function(a, b) return a:upper() .. b end))
+end
+local function ghost_list(kind)
+    return function(ctx)
+        local w = safe(function() return ctx:get() end)
+        list_t = os.clock()
+        Out.say(GHOST_TITLE[kind], true)
+        local M = package.loaded["menus"]
+        -- TB_Non ("No one to show on list") reports itself visible even under
+        -- a full list: the list is empty when no row has taken the cursor
+        local opened = list_t
+        if M and UI.valid(w) then M.defer(function()
+            if row_t >= opened or not UI.valid(w) then return end
+            Out.queue(UI.clean(UI.text_of(safe(function() return w.TB_Non end)) or "") or "Empty.")
+        end, 0.7) end
+    end
+end
+local function ghost_row(kind)
+    return function(ctx)
+        local w = safe(function() return ctx:get() end)
+        if not UI.valid(w) then return end
+        row_t = os.clock()
+        local function txt(n) return UI.clean(UI.text_of(safe(function() return w[n] end)) or "") or "" end
+        local parts = {}
+        local name = txt("TB_Name")
+        if kind == "PLAYER" then
+            parts[1] = title_case(name)                       -- your ghosts are named by fighter
+        else
+            parts[1] = name
+            local f = D.fighters[safe(function() return w.FighterId end)]
+            if f and f:lower() ~= name:lower() then parts[#parts + 1] = f end
+        end
+        local tex = safe(function() return w.Rep_T_UI_CMN_RNK_S.Brush.ResourceObject:GetFName():ToString() end)
+        local rank = D.rank(safe(function() return w.rank end), tex)
+        if rank then parts[#parts + 1] = rank end
+        local pow = txt("TB_DATA_POW")
+        if pow ~= "" then parts[#parts + 1] = "Tekken Power " .. pow end
+        local date = txt("TB_DATA_date")
+        if date ~= "" then parts[#parts + 1] = (kind == "DL" and "downloaded " or "updated ") .. date end
+        if safe(function() return w.IsWon end) == true then parts[#parts + 1] = "beaten"
+        elseif safe(function() return w.IsTreasure end) == true then parts[#parts + 1] = "treasure" end
+        local t = table.concat(parts, ", ")
+        -- the first row comes with the list: after its title
+        if os.clock() - list_t < 1.0 then Out.queue(t) else Out.say(t) end
+    end
+end
+
 local NPC_TALK = "/Game/TrueArcadeMode/UI/WBP_TAM_Npc_Talk.WBP_TAM_Npc_Talk_C:"
 TAM.HOOKS = {
     { "/Game/TrueArcadeMode/BluePrints/Player/BP_TAM_Player.BP_TAM_Player_C:ReceiveTick", TAM.on_player_tick },
@@ -370,5 +441,10 @@ TAM.HOOKS = {
     { "/Game/UI/Widget/TAM/WBP_UI_TAM_BuddyMenuList.WBP_UI_TAM_BuddyMenuList_C:OnButtonSelect", on_row_select },
     { "/Game/UI/Widget/TAM/WBP_UI_TAM_BuddyMenu_SubList.WBP_UI_TAM_BuddyMenu_SubList_C:OnButtonSelect", on_row_select },
 }
+for _, kind in ipairs({ "PLAYER", "DL", "CPU" }) do
+    local G = "/Game/UI/Widget/TAM/WBP_UI_Ghost_" .. kind
+    TAM.HOOKS[#TAM.HOOKS + 1] = { G .. "menu.WBP_UI_Ghost_" .. kind .. "menu_C:Event_Start", ghost_list(kind) }
+    TAM.HOOKS[#TAM.HOOKS + 1] = { G .. "list.WBP_UI_Ghost_" .. kind .. "list_C:OnButtonSelect", ghost_row(kind) }
+end
 
 return TAM
