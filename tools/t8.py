@@ -175,6 +175,39 @@ def window():
     return best[0]
 
 
+def _bring(w):
+    """SetForegroundWindow from a background process: tap Alt and attach to
+    the foreground thread's input for the call."""
+    fg = u32.GetForegroundWindow()
+    t_fg = u32.GetWindowThreadProcessId(fg, None)
+    t_me = k32.GetCurrentThreadId()
+    u32.keybd_event(0x12, 0, 0, 0); u32.keybd_event(0x12, 0, 2, 0)
+    u32.AttachThreadInput(t_me, t_fg, True)
+    if u32.IsIconic(w):
+        u32.ShowWindow(w, 9)
+    u32.BringWindowToTop(w); u32.SetForegroundWindow(w)
+    u32.AttachThreadInput(t_me, t_fg, False)
+
+
+def refocus(times=3):
+    """Tekken 8 can be the foreground window and still ignore the keyboard
+    (the title screen after a restart; a window focus bug, not the pad).
+    Switching to another window and back a few times wakes it up."""
+    u32.FindWindowW.restype = W.HWND
+    other = u32.FindWindowW("Shell_TrayWnd", None)
+    for _ in range(times):
+        if other:
+            _bring(other)
+            time.sleep(0.4)
+        w = window()
+        if not w:
+            raise BotError("the game is not running")
+        _bring(w)
+        time.sleep(0.6)
+    focus()
+    log("refocused the game window")
+
+
 def focus():
     for _ in range(8):
         w = window()
@@ -184,17 +217,7 @@ def focus():
             time.sleep(0.5); continue
         if u32.GetForegroundWindow() == w:
             return w
-        # let SetForegroundWindow work from a background process: tap Alt,
-        # and attach to the foreground thread's input for the call
-        fg = u32.GetForegroundWindow()
-        t_fg = u32.GetWindowThreadProcessId(fg, None)
-        t_me = k32.GetCurrentThreadId()
-        u32.keybd_event(0x12, 0, 0, 0); u32.keybd_event(0x12, 0, 2, 0)
-        u32.AttachThreadInput(t_me, t_fg, True)
-        if u32.IsIconic(w):
-            u32.ShowWindow(w, 9)
-        u32.BringWindowToTop(w); u32.SetForegroundWindow(w)
-        u32.AttachThreadInput(t_me, t_fg, False)
+        _bring(w)
         time.sleep(0.3)
     raise BotError("could not bring the game window to the front; no keys sent")
 
@@ -285,9 +308,15 @@ def boot(timeout=240):
     log("waiting for the dev console")
     wait_until(lambda: lua("return 1", 3).startswith("=> 1"), 120, "the mod's dev console (is dev.txt there?)")
     end = time.time() + timeout
-    last, same_since = None, time.time()
+    last, same_since, refocused = None, time.time(), 0
+    refocus()
     while time.time() < end:
         st = state()
+        # the title ignoring keys (no widgets answering, or the same screen):
+        # switch windows and back, then go on pressing
+        if time.time() - same_since > 20 * (refocused + 1) and refocused < 3:
+            refocused += 1
+            refocus()
         if st is None:
             time.sleep(1); continue
         if at_main(st):

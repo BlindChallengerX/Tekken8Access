@@ -42,6 +42,12 @@ What is read
   story fights. The fighter you pick in Chapter 5 is the one the beacon
   and sounds treat as you, and in story fights the beacon and attack
   sounds start when the round starts, not during the intro scene.
+- News (Information): the game opens it after the title when there is news,
+  or from the main menu's shortcut bar (Esc, then News). Each headline is
+  read with "new" if unread and its place ("2 of 8"); Enter reads the whole
+  article and its buttons (Store, Close). The Log tab and notices that pop
+  up (friends, unlocks) are read too. Dialogs on the title screen
+  ("Connecting to the server") are read now as well.
 - Move list and sample combos: number, move name and the command in Tekken
   notation (d/f+1, hold f, 1+2 ...), then notes and damage when you rest.
   "then" marks the next part of a string or combo.
@@ -81,6 +87,17 @@ Fights
   your own, both, or off; the choice is remembered. Your own attacks play on
   your side and a little quieter, so the opponent's stand out when both are
   on. Ctrl+F2 plays each sound with its name.
+- Walls: soft hums that grow louder as a wall gets closer.
+  Wall behind you: a low hum on your side of the screen, from about 2.5
+  meters away. Wall behind the opponent (you can carry them into it): the
+  same hum a little higher and quieter, on their side, from about 2 meters.
+  Sidestep walls: a pulsing hum, higher for a wall up the screen (sidestep
+  up), lower for a wall toward the camera (sidestep down), from about 1.5
+  meters; when the pulse turns fast, sidestepping that way is blocked.
+  On stages with floor or balcony breaks the mod follows the floor you are
+  on. F5 says the distances ("Wall behind you 1.2 meters ... Sidestep up
+  blocked"), and names balconies and breakable walls. Ctrl+F6 turns the
+  wall sounds off and on.
 - Tekken Ball: a short dry tock for the ball. Panned to its side, higher
   when the ball is higher in the air (whole steps from the floor up to
   about 3.5 meters), ticking faster as it gets closer. F5 also says how far
@@ -134,10 +151,11 @@ Keys
 F1   Arcade Quest: next person or machine (Shift+F1: previous)
 F3   subtitles on / off
 F4   Tekken Ball sound on / off
-F5   distance and health (and the ball in Tekken Ball; in Arcade Quest the
-     objective and where your pick is)
+F5   distance and health, then the walls (and the ball in Tekken Ball; in
+     Arcade Quest the objective and where your pick is)
 Shift+F5  story fights: read the control list
 F6   opponent beacon on / off (also the Arcade Quest beacon)
+Ctrl+F6  wall sounds on / off
 F7   repeat the selected move with its notes (in a combo challenge: its steps)
 F8   repeat the last thing said
 F9   read everything on screen

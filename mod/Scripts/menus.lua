@@ -963,11 +963,15 @@ end
 
 -- game thread: look at live widget classes and queue hooks for new ones
 local seen_class = {}
-function Menus.scan_classes()
+-- FindAllOf also returns widgets of the screen just left while they are being
+-- destroyed: each is checked with IsValid before anything else is asked
+-- (GetClass on a dead one is an access violation, not a Lua error; a scan
+-- right after returning to the main menu took the game down on 2026-11-13).
+function Menus.scan_classes(booting)
     local arr = FindAllOf("UserWidget")
     if type(arr) ~= "table" then return end
     for _, w in ipairs(arr) do
-        local c = safe(function() return w:GetClass() end)
+        local c = UI.valid(w) and safe(function() return w:GetClass() end)
         while c and UI.valid(c) do
             local full = safe(function() return c:GetFullName() end) or ""
             if not full:find("^WidgetBlueprintGeneratedClass") or seen_class[full] then break end
@@ -982,14 +986,13 @@ function Menus.scan_classes()
                 end
                 if Story.OWN_CLASSES[short] or Options.OWN_CLASSES[short] or News.OWN_CLASSES[short] then dyn = {} end
                 local is_dialog = short:find("Dialog") ~= nil and not short:find("Button")
-                -- a dialog class first seen while it is already open (the
-                -- rewards dialog before the main menu): its open event has
-                -- passed, so read it now
-                local hooked = false
-                for fn in pairs(DIALOG_FUNCS) do if registered[path .. ":" .. fn] then hooked = true end end
-                if is_dialog and not dyn and not hooked and UI.shown(w) then
-                    local live = w
-                    Menus.defer(function() if UI.shown(live) then read_dialog(live) end end, 0.1)
+                -- before the main menu: a dialog class first seen while it is
+                -- already open (the rewards dialog) has had its open event, so
+                -- read it now (at once: the widget is never kept for later)
+                if booting and is_dialog and not dyn and UI.shown(w) then
+                    local hooked = false
+                    for fn in pairs(DIALOG_FUNCS) do if registered[path .. ":" .. fn] then hooked = true end end
+                    if not hooked then read_dialog(w) end
                 end
                 -- banners animate on every cursor move without being the cursor
                 -- (so do whole menu tables: their select animation reads every row)

@@ -6,7 +6,7 @@
 - `helper/` - TekkenA11yHelper.exe (C, 64-bit w64devkit): named pipe `\\.\pipe\TekkenA11y`,
   Prism speech (speech.c from SC2 Access), waveOut synth (audio.c from SC2), beacon.c.
 - `build.sh` (Git Bash) -> `out/TekkenA11y`; `deploy.ps1` copies into the game's Mods folder.
-- `tools/` - t8.py (bot: dev console, keys, screenshots; `boot`, `practice [right]`,
+- `tools/` - t8.py (bot: dev console, keys, screenshots; `boot`, `practice [right] [stage]`,
   `pmenu "<row>"`, `state`; every step checks the screen or the mod's speech and stops with
   BotError instead of pressing on; the window is found by the game's process), lat.py
   (key-to-SAY latency), flow.py (main menu -> practice match), discover.lua (hook every
@@ -206,7 +206,7 @@ tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file 
   over a head is not known (unknown icons are logged "TAM icon"); campaign chapters (other maps)
   not tested, only the post-campaign ghost arcade (TAM_Ghost_PL).
 - Keyboard key names for kbd_ icons; Roger Jr. id; story fighter names.
-- Beacon only uses the camera frame; no wall cues yet. Ball cue untested by ear.
+- Ball cue untested by ear. Wall cues: see "Walls".
 - The keyboard is ignored at the title screen after a restart while a controller is plugged in
   (every restart on 2026-10-29): someone has to press a controller button there. The attract
   movie (WBP_UI_StoryMoviePlayer_C, not in viewport) needs Esc; t8.py boot presses it.
@@ -294,3 +294,61 @@ tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file 
   unchanged. attack.c now tries the known offsets, then searches 0x3000-0x4000 of the block for
   a pointer to itself repeated 0x80 later (fighter id < 200 as a check), and keeps the offset as a
   third field in attack_root.txt.
+
+## News and boot screens (news.lua, 2026-11-12)
+- Information screen /Game/UI/Widget/News/: WBP_UI_News_C lives inside the main menu's widget tree but is
+  created on open: OnInitialized, then both Tab_Item SetAnim_Select, then Construct, OnDownloadInformations,
+  first banner select (~0.5 s). Open line hooks OnInitialized. TB_num "1 / 8", TabIndex (1 = Log).
+- WBP_UI_News_Banner_C:SetAnim_Select = cursor (self = the banner); TBR_category = headline,
+  WBP_UI_Icon_NewBadge visible = unread. Select_WBP_UI_News_Content fires per move too (preview, hidden).
+- Enter: WBP_UI_News_Content_C:Open_WBP_UI_News_Content; tb_title, TB_text (body with blank lines),
+  TB_icon_N / TB_text_N guides. Its WBP_UI_News_ContentButton has its own TB_text ("Store"): read title and
+  body by name, never by tree walk. FindFirstOf returns the class template first (IsOpen false).
+- Log tab: WBP_UI_News_Log_C.CanvasNon = "Nothing to show here."; it stays IsVisible behind the News tab.
+  Rows WBP_UI_News_Log_List_C (BP_OnItemSelectionChanged) not seen with entries (empty log).
+- Notices WBP_UI_Notice_C:FrameIn (TB_Message, TB_SubMessage, TB_ID): hooked, not seen yet.
+- The game shows News by itself after the title only sometimes (once on 2026-11-12, not in the later boots).
+  The first boot that day also showed WBP_UI_Dialog_Item_Impl_C (rewards, ~80 s); its asset path is unknown
+  (not under /Game/UI/Widget/Dialog/).
+- Before this, every screen before the main menu was silent: hooks registered only after the main menu
+  (preload) and scans needed menu activity. Now Menus.preload_early() loads the dialog and news classes at the
+  first maintenance pass (title), and until the main menu has shown scan_classes runs every 3 s; a dialog
+  class first seen already open (no hook yet) is read once on discovery.
+- Main menu shortcut bar: Esc lands on Quit; order Options, Community, Accessibility, Play Data, News,
+  Tekken Shop, Quit. The first Esc right after the main menu appears is often ignored.
+
+## Walls (helper/walls.c, fight.lua, 2026-11-12)
+- Walls are PolarisStageWallActor (BP_PolarisWall_C, BP_PolarisWallBreak_*, BP_PolarisWallBreakBalcony_*),
+  StaticMeshActor subclasses: actor location is 0; the shape is StaticMeshComponent (100 cm cube) with
+  K2_GetComponentLocation / Rotation / Scale and GetLocalBounds(min, max) (UE4SS fills out-param tables).
+  Rebel Hangar: 32 m x 6 m x 10 m boxes, diagonals at +-45, upper floor at z 600-1600.
+- Live walls: State 1; unused placeholders sit at the origin, scale 1, State 0. TKCollisionEnable is false
+  on every wall, so it is not the live flag. WallAttribute: 0 plain, 16384 / 67585 / 131077 (balcony) seen,
+  bits not decoded; kind comes from the actor name (Balcony / Break).
+- FloorNo splits floor sets (Rebel Hangar upper floor 0 incl. the balcony box which spans both floors,
+  ground floor 1). Floor pick: the live walls whose bottom is highest but at most feet + 80 cm
+  (feet = fighter origin Z - 100).
+- Verified 2026-11-12 by sidestepping into walls: Rebel Hangar balcony face x -1130, fighters stopped at
+  -1162 / -1201; second stage (Random, z ~5800) the same. F5 distances matched the box faces.
+- Body allowance 40 cm (BODY in walls.c); "blocked" under 60 cm of space.
+- Practice Restart Settings > Restart Position has Wall / Wall Blast / Balcony Break, but the restart key
+  (V = View) did not move the fighters in a test; Opponent Actions Mimic copies walks and sidesteps.
+- Not checked: the infinite Practice stage (its walls exist at x +-1450 with scale 35 x 5 x 10; their State
+  unknown - if 1, F5 there reports walls ~13 m away); wall breaks mid-round (State after a break); Arena.
+- CRASH (2026-11-13, user): back on the main menu from side select, ~9 s later on a row move: access
+  violation inside UE4SS under a Lua hook (UEMinidump in %LOCALAPPDATA%\TEKKEN 8\Saved\Crashes; no UE4SS
+  symbols ship with this build). The class scan that menu activity triggers called GetClass on every
+  FindAllOf("UserWidget") result, including widgets of the screen just left; the read-on-discovery added
+  2026-11-12 also kept a dialog widget 0.1 s. Fix: UI.valid(w) before GetClass; discovery reads only before
+  the main menu and at once. Not reproduced on the old build; the fixed build survived 5 side-select returns
+  and 1 match return with 12-20 s of row moves each.
+- CRASH (2026-11-12): reading every property value of a wall actor from the dev console (tostring on each)
+  closed the game. List names/types only, then read chosen fields.
+
+## Testing notes (2026-11-12)
+- After a restart Tekken 8 can be the foreground window and still ignore keys at the title: a focus bug, not
+  the pad. t8.refocus() switches to the taskbar and back three times; boot() calls it at start and when a
+  screen stays the same for 20 s. The attract movie (no widgets, console silent) also needs Esc.
+- Stage select: Random sits between Descent into Subconscious and Arena; Up/Down move rows and the mod does
+  not speak those moves. Baobab Horizon (DLC, not owned) opens a Tekken Shop dialog
+  (WBP_UI_Store_SelectDialog_Impl_C) that the mod did not read: Esc closes it. Never press Enter there.

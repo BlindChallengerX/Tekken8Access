@@ -168,7 +168,7 @@ local function maint()
     -- before the main menu has shown (title, news, rewards) nothing counts as
     -- menu activity yet, so look for new screens every 3 s
     local booting = not preload_done
-    if (t - Menus.last_menu_t < 3 or booting) and t - last_scan > (booting and 3 or 5) then last_scan = t; Menus.scan_classes() end
+    if (t - Menus.last_menu_t < 3 or booting) and t - last_scan > (booting and 3 or 5) then last_scan = t; Menus.scan_classes(booting) end
     if not Watch.has_subtitle_widget() and t - last_sub_find > 10 and t - Menus.last_menu_t < 3 then
         last_sub_find = t
         Watch.find_subtitle_widget()
