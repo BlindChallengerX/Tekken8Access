@@ -1,5 +1,7 @@
-﻿Tekken 8 Access 1.0.1 - screen reader and audio cues for Tekken 8
-=================================================================
+﻿Tekken 8 Access 1.0 - screen reader and audio cues for Tekken 8
+===============================================================
+
+Tested with Tekken 8 version 3.03.01 (Steam, November 2026).
 
 Speech goes through Prism (NVDA, JAWS and others, or the Windows voice if no
 screen reader runs). A small helper program, speaker\TekkenA11yHelper.exe,
@@ -186,19 +188,13 @@ Shift+F2  attack sounds: opponent's, yours, both or off; Ctrl+F2 hear each one w
 F11  speech on / off
 Shift+F11  button names: Xbox, PlayStation or keyboard keys
 
-Changes in 1.0.1
-----------------
-- Attack height sounds work again after the Tekken 8 update of
-  11 November 2026 (it moved the fight data they read). If a later update
-  moves it a little again, the mod finds it by itself.
-- Story mode: the fighter you pick on the Chapter 5 choice screen counts
-  as you (picking the right-hand fighter used to leave the beacon on the
-  wrong fighter).
-- Story mode: the beacon, attack sounds and throw tones wait for the round
-  to start instead of playing during the intro scenes.
-- No more "K.O." for both fighters when a story fight closes.
-- New name: Tekken 8 Access (was TekkenA11y). The mod folder is still
-  Win64\Mods\TekkenA11y, so extracting over 1.0 keeps your settings.
+Updating from a test build
+--------------------------
+Extract this zip over it. The mod folder is still Win64\Mods\TekkenA11y
+(the mod was called TekkenA11y before), so your settings stay.
+
+If a Tekken 8 update moves the fight data, attack sounds find it again by
+themselves; if they stay silent after an update, please report it.
 
 Uninstall: delete Win64\Mods\TekkenA11y. To remove UE4SS too, also delete
 dwmapi.dll, UE4SS.dll and UE4SS-settings.ini from Win64.

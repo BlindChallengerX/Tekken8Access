@@ -178,7 +178,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     wcscat(logp, L"\\helper.log");
     InitializeCriticalSection(&g_loglock);
     g_log = _wfopen(logp, L"w");
-    log_line("Tekken 8 Access helper 1.0.1 started");
+    log_line("Tekken 8 Access helper 1.0 started");
 
     speech_init();
     audio_init();
