@@ -30,6 +30,7 @@ typedef struct {
     float cf, cg, cp, phase;          /* current */
     int wave;
     float lp, bp, gust;               /* W_WIND filter state, gust phase */
+    float trem, tph;                  /* pulse rate (Hz, 0 = steady) and phase */
 } Hum;
 
 static CRITICAL_SECTION s_lock;
@@ -99,6 +100,14 @@ void hum_set(int slot, float freq, float gain, float pan, int wave) {
     LeaveCriticalSection(&s_lock);
 }
 
+/* pulse a hum: its level swells and dips `rate` times a second (0 = steady) */
+void hum_trem(int slot, float rate) {
+    if (slot < 0 || slot >= NHUMS || bad(rate)) return;
+    EnterCriticalSection(&s_lock);
+    s_hums[slot].trem = rate;
+    LeaveCriticalSection(&s_lock);
+}
+
 void hum_all_off(void) {
     EnterCriticalSection(&s_lock);
     for (int i = 0; i < NHUMS; i++) s_hums[i].gain = 0;
@@ -160,6 +169,11 @@ static void mix(short *out, int frames) {
             } else {
                 s = osc(h->wave, h->phase) * h->cg;
                 h->phase += h->cf * dt; h->phase -= floorf(h->phase);
+                if (h->trem > 0) {
+                    h->tph += h->trem * dt; h->tph -= floorf(h->tph);
+                    float w = 0.5f + 0.5f * sinf(PI2 * h->tph);
+                    s *= 0.12f + 0.88f * w * w;
+                }
             }
             buf[2 * n] += s * sqrtf(0.5f * (1 - h->cp)); buf[2 * n + 1] += s * sqrtf(0.5f * (1 + h->cp));
         }

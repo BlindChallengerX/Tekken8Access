@@ -78,6 +78,7 @@ static void ui_sound(const char *name) {
     else if (!strcmp(name, "throw1")) tone(392, 392, 0.14f, 0.20f, 0, W_REED);
     else if (!strcmp(name, "throw2")) { tone(784, 784, 0.06f, 0.18f, 0, W_REED); tone_at(0.09f, 784, 784, 0.06f, 0.18f, 0, W_REED); }
     else if (!strcmp(name, "atk_demo")) attack_demo();
+    else if (!strcmp(name, "stat")) audio_stat();      /* testing: what is sounding */
     else if (!strcmp(name, "throw12"))
         for (int i = 0; i < 4; i++) tone_at(i * 0.055f, 1047, 1047, 0.035f, 0.17f, 0, W_REED);
 }
@@ -99,6 +100,14 @@ static void handle(char *line) {
         while (*p && k < 16) { char *e; v[k] = strtof(p, &e); if (e == p) break; k++; p = e; while (*p == '\t' || *p == ' ') p++; }
         beacon_frame(v, k);
     } else if (!strcmp(line, "F0")) beacon_off();
+    else if (!strcmp(line, "W")) {
+        /* wall boxes: count, then cx cy hx hy cos sin kind per wall */
+        static float v[1 + 64 * 7]; int k = 0;
+        char *p = arg;
+        while (*p && k < (int)(sizeof v / sizeof *v)) { char *e; v[k] = strtof(p, &e); if (e == p) break; k++; p = e; while (*p == '\t' || *p == ' ') p++; }
+        walls_set(v, k);
+    } else if (!strcmp(line, "W0")) walls_set(NULL, 0);
+    else if (!strcmp(line, "WS")) walls_say();
     else if (!strcmp(line, "BL")) {
         float v[8]; int k = 0;
         char *p = arg;
@@ -112,7 +121,7 @@ static void handle(char *line) {
     } else if (!strcmp(line, "A0")) attack_watch(-1, 0);
     else if (!strcmp(line, "C")) {
         char *v = strchr(arg, '\t');
-        if (v) { *v++ = 0; beacon_config(arg, strtof(v, NULL)); }
+        if (v) { *v++ = 0; beacon_config(arg, strtof(v, NULL)); walls_config(arg, strtof(v, NULL)); }
     } else if (!strcmp(line, "L")) log_line("mod: %s", arg);
     else log_line("unknown command %s", line);
 }
@@ -187,6 +196,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     for (;;) {
         if (WaitForSingleObject(game, 20) == WAIT_OBJECT_0) break;
         beacon_tick();
+        walls_tick();
     }
     log_line("game exited");
     return 0;

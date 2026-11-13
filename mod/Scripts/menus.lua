@@ -644,9 +644,7 @@ end
 -- (controller assignment) replay their open animation every second: while
 -- the same text keeps firing, it is not repeated.
 local dialog_last, dialog_t = "", -1
-local function on_dialog(ctx)
-    local w = self_of(ctx)
-    if not w then return end
+local function read_dialog(w)
     local t = UI.read(w)
     if t == "" then return end
     if os.clock() - dialog_t < 1.5 and dialog_last:find(t, 1, true) then dialog_t = os.clock() return end
@@ -657,6 +655,10 @@ local function on_dialog(ctx)
     local btn = os.clock() - generic_t < 0.8 and generic_last or nil
     Out.say(t, true)
     if btn and btn ~= t then Out.queue(btn) end
+end
+local function on_dialog(ctx)
+    local w = self_of(ctx)
+    if w then read_dialog(w) end
 end
 
 -- ---------------------------------------------------------------- text events
@@ -874,6 +876,10 @@ for _, s in ipairs(Story.HOOKS) do pending[s[1]] = s[2]; important[s[1]] = true 
 local Options = require("options")
 Options.init(Menus)
 for _, s in ipairs(Options.HOOKS) do pending[s[1]] = s[2]; important[s[1]] = true end
+-- the Information (news) screen and notice pop-ups (news.lua)
+local News = require("news")
+News.init(Menus)
+for _, s in ipairs(News.HOOKS) do pending[s[1]] = s[2]; important[s[1]] = true end
 
 local function try_register(path, fn)
     if registered[path] then return true end
@@ -974,8 +980,17 @@ function Menus.scan_classes()
                 if dyn then
                     for _, d in ipairs(dyn) do pending[path .. ":" .. d[1]] = d[2] end
                 end
-                if Story.OWN_CLASSES[short] or Options.OWN_CLASSES[short] then dyn = {} end
+                if Story.OWN_CLASSES[short] or Options.OWN_CLASSES[short] or News.OWN_CLASSES[short] then dyn = {} end
                 local is_dialog = short:find("Dialog") ~= nil and not short:find("Button")
+                -- a dialog class first seen while it is already open (the
+                -- rewards dialog before the main menu): its open event has
+                -- passed, so read it now
+                local hooked = false
+                for fn in pairs(DIALOG_FUNCS) do if registered[path .. ":" .. fn] then hooked = true end end
+                if is_dialog and not dyn and not hooked and UI.shown(w) then
+                    local live = w
+                    Menus.defer(function() if UI.shown(live) then read_dialog(live) end end, 0.1)
+                end
                 -- banners animate on every cursor move without being the cursor
                 -- (so do whole menu tables: their select animation reads every row)
                 if short:find("BlackPen") or short:find("Banner") or short:find("Menu_Table") then dyn = {} end
@@ -1024,24 +1039,44 @@ local PRELOAD = {
 }
 for _, p in ipairs(Story.PRELOAD) do PRELOAD[#PRELOAD + 1] = p end
 for _, p in ipairs(Options.PRELOAD) do PRELOAD[#PRELOAD + 1] = p end
+local function load_class(p)
+    -- LoadAsset wants the class object path: /Game/.../WBP_X.WBP_X_C
+    local short = p:match("([^/]+)$") .. "_C"
+    local path = p .. "." .. short
+    local ok = pcall(LoadAsset, path)
+    -- loaded now: its hooks register on the next maintenance pass, without
+    -- waiting for the slow retry of classes looked up before the preload
+    -- (maintenance does not run during story movies, so that retry left
+    -- the pause menu and the story prompts unhooked for a minute or two)
+    if ok then ready_cls[path], missed[path], Menus.pending_ready = true, nil, true end
+    local dyn = DYN[short]
+    if dyn then for _, d in ipairs(dyn) do pending[path .. ":" .. d[1]] = d[2]; important[path .. ":" .. d[1]] = true end end
+    Out.log("preload " .. p .. " " .. tostring(ok))
+end
+
 local preloaded = false
 function Menus.preload()
     if preloaded then return end
     preloaded = true
-    for _, p in ipairs(PRELOAD) do
-        -- LoadAsset wants the class object path: /Game/.../WBP_X.WBP_X_C
-        local short = p:match("([^/]+)$") .. "_C"
-        local path = p .. "." .. short
-        local ok = pcall(LoadAsset, path)
-        -- loaded now: its hooks register on the next maintenance pass, without
-        -- waiting for the slow retry of classes looked up before the preload
-        -- (maintenance does not run during story movies, so that retry left
-        -- the pause menu and the story prompts unhooked for a minute or two)
-        if ok then ready_cls[path], missed[path], Menus.pending_ready = true, nil, true end
-        local dyn = DYN[short]
-        if dyn then for _, d in ipairs(dyn) do pending[path .. ":" .. d[1]] = d[2]; important[path .. ":" .. d[1]] = true end end
-        Out.log("preload " .. p .. " " .. tostring(ok))
-    end
+    for _, p in ipairs(PRELOAD) do load_class(p) end
+end
+
+-- Screens shown before the main menu (news after the title, the title's
+-- dialogs): loaded at the first maintenance pass. Before this the hooks only
+-- came after the main menu appeared and the news was silent (2026-11-12).
+local EARLY = {
+    "/Game/UI/Widget/Dialog/WBP_UI_Dialog",
+    "/Game/UI/Widget/Dialog/WBP_UI_Dialog_Menu",
+    "/Game/UI/Widget/Dialog/WBP_UI_Dialog_LR",
+    "/Game/UI/Widget/Dialog/WBP_UI_Dialog_LR_Menu",
+    "/Game/UI/Widget/Dialog/WBP_UI_Dialog_TextButton",
+}
+for _, p in ipairs(News.PRELOAD) do EARLY[#EARLY + 1] = p end
+local early_done = false
+function Menus.preload_early()
+    if early_done then return end
+    early_done = true
+    for _, p in ipairs(EARLY) do load_class(p) end
 end
 
 -- F7: the whole current move again with its notes

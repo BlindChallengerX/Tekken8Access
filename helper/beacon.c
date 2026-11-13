@@ -50,6 +50,7 @@ void beacon_frame(const float *v, int n) {
     float cl = sqrtf(cx * cx + cy * cy);
     if (!(cl > 1e-3f)) return;
     cx /= cl; cy /= cl;
+    walls_frame(v[0], v[1], v[2], v[3], cx, cy);
     float len = sqrtf(dx * dx + dy * dy);
     /* UE: X forward, Y right (left-handed), so screen right = (-cy, cx) */
     float screen = dx * -cy + dy * cx, depth = dx * cx + dy * cy;
@@ -86,6 +87,7 @@ void beacon_off(void) {
     EnterCriticalSection(&s_lock);
     s_have = 0; s_level = 0;
     LeaveCriticalSection(&s_lock);
+    walls_off();
 }
 
 /*

@@ -23,6 +23,8 @@ void tone(float f0, float f1, float seconds, float gain, float pan, int wave);
 void tone_at(float delay, float f0, float f1, float seconds, float gain, float pan, int wave);
 void hum_set(int slot, float freq, float gain, float pan, int wave);
 void hum_all_off(void);
+void hum_trem(int slot, float rate);
+void audio_stat(void);
 extern volatile float g_master;
 
 /* beacon.c */
@@ -39,3 +41,11 @@ void attack_init(void);
 void attack_watch(int me, int mode); /* me = player's PlayerNumber; mode 1 opponent, 2 own, 3 both, 0 off */
 void attack_demo(void);
 void attack_sound(int code, float pan, float vol);
+
+/* walls.c */
+void walls_set(const float *v, int n);
+void walls_frame(float mx, float my, float ox, float oy, float cx, float cy);
+void walls_off(void);
+void walls_tick(void);
+void walls_config(const char *key, float value);
+void walls_say(void);

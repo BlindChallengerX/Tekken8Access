@@ -9,7 +9,7 @@ before every key.
 
   python t8.py state                   visible widgets + last speech
   python t8.py boot                    after a start: title, news, to the main menu
-  python t8.py practice [right]        main menu -> a Practice match (left side default)
+  python t8.py practice [right] [stage] main menu -> a Practice match (left side default)
   python t8.py pmenu "Throw Escape Training"   Practice pause menu -> that row, Enter
   python t8.py lua "return 1+1"        run Lua in the game (dev console)
   python t8.py luaf file.lua [secs]    run a Lua file
@@ -347,10 +347,13 @@ def to_row(name, limit=20):
         press("numminus", after=0.6)
     else:
         raise BotError(f"no main menu tab has a row {name!r}")
+    if lua(CUR_ROW).replace("=> ", "").strip() == name:
+        return True
     for _ in range(limit):
-        if lua(CUR_ROW).replace("=> ", "").strip() == name:
+        mark = log_mark()
+        press("down", after=0.45)
+        if name in says_since(mark):
             return True
-        press("down", after=0.35)
     raise BotError(f"could not highlight {name!r}")
 
 
@@ -366,8 +369,9 @@ def enter_until(widget, tries=3, wait=7):
     raise BotError(f"{widget} did not open")
 
 
-def practice(side="left"):
-    """Main menu -> Practice -> side -> the default fighters -> a stage -> in the match."""
+def practice(side="left", stage=None):
+    """Main menu -> Practice -> side -> the default fighters -> a stage (the one
+    under the cursor, or `stage` found with Right by its spoken name) -> in the match."""
     to_row("Practice")
     enter_until("SideSelect")
     log("side select")
@@ -398,6 +402,14 @@ def practice(side="left"):
     wait_widget("StageSelect", 20)
     log("stage select")
     time.sleep(2.0)
+    if stage:
+        for _ in range(40):
+            mark = log_mark()
+            press("right", after=0.8)
+            if stage in says_since(mark):
+                break
+        else:
+            raise BotError(f"stage {stage!r} not found")
     press("enter", after=0.5)
     wait_widget("HUD_S2", 90)
     wait_widget("Practice_S2", 30)
@@ -451,7 +463,11 @@ if __name__ == "__main__":
         elif c == "state": print(" ".join(sorted(state() or ["(console not answering)"]))); print(say(3))
         elif c == "boot": boot()
         elif c == "main": to_main()
-        elif c == "practice": practice("right" if len(sys.argv) > 2 and sys.argv[2] == "right" else "left")
+        elif c == "practice":
+            rest = sys.argv[2:]
+            side = "right" if rest[:1] == ["right"] else "left"
+            if rest[:1] in (["right"], ["left"]): rest = rest[1:]
+            practice(side, " ".join(rest) or None)
         elif c == "pmenu": pmenu(sys.argv[2])
         else: print(__doc__)
     except BotError as e:

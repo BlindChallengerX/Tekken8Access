@@ -9,7 +9,7 @@
   Keys: F1 / Shift+F1 Arcade Quest: next / previous person or machine,
         F3 subtitles on/off, F4 Tekken Ball sound on/off, F5 fight status (Arcade Quest: objective and pick),
         Shift+F5 story fight control list,
-        F6 beacon on/off, F7 repeat move with notes, F8 repeat last speech,
+        F6 beacon on/off, Ctrl+F6 wall sounds on/off, F7 repeat move with notes, F8 repeat last speech,
         F2 throw break sounds on/off, Shift+F2 attack sounds: opponent / yours / both / off, Ctrl+F2 hear them, F9 read screen, F11 speech on/off,
         Shift+F11 button names (Xbox / PlayStation / keyboard).
 
@@ -81,6 +81,7 @@ bind("F5", function() if not require("story").controls() then Out.say("No contro
 bind("F1", function() TAM.next(1) end)
 bind("F1", function() TAM.next(-1) end, "SHIFT")
 bind("F6", Fight.toggle_beacon)
+bind("F6", Fight.toggle_walls, "CONTROL")
 bind("F7", Menus.repeat_move)
 bind("F8", function() Out.send("S1\t" .. (Out.last ~= "" and Out.last or "Nothing yet.")) end)
 bind("F9", read_screen)
@@ -154,6 +155,7 @@ local function maint()
     local t = os.clock()
     if t - last_maint < 1.0 then return end
     last_maint = t
+    if not Fight.active() then Menus.preload_early() end
     -- hooks: lookups that find nothing cost ~13 ms, so check_pending keeps
     -- them to one a pass and none in a fight (menus.lua)
     Menus.check_pending(Fight.active())
@@ -163,7 +165,10 @@ local function maint()
         local mm = FindFirstOf("WBP_UI_MainMenu_C")
         if UI.shown(mm) then Menus.preload(); preload_done = true end
     end
-    if t - Menus.last_menu_t < 3 and t - last_scan > 5 then last_scan = t; Menus.scan_classes() end
+    -- before the main menu has shown (title, news, rewards) nothing counts as
+    -- menu activity yet, so look for new screens every 3 s
+    local booting = not preload_done
+    if (t - Menus.last_menu_t < 3 or booting) and t - last_scan > (booting and 3 or 5) then last_scan = t; Menus.scan_classes() end
     if not Watch.has_subtitle_widget() and t - last_sub_find > 10 and t - Menus.last_menu_t < 3 then
         last_sub_find = t
         Watch.find_subtitle_widget()

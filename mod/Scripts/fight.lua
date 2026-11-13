@@ -217,7 +217,9 @@ local function health()
     for n = 0, 1 do now[n] = safe(function() return f[n]:GetHPPercentage() end) end
     -- both bars dropping to 0 in one read is the fight being torn down (story
     -- fights after the K.O. was already said), not a double K.O.
-    local teardown = now[0] == 0 and now[1] == 0 and (hp[0] or 0) > 0 and (hp[1] or 0) > 0
+    -- (<= 0: leaving Practice on 2026-11-12 still said both K.O. lines)
+    local teardown = type(now[0]) == "number" and type(now[1]) == "number" and now[0] <= 0 and now[1] <= 0
+        and (hp[0] or 0) > 0 and (hp[1] or 0) > 0
     for n = 0, 1 do
         local h = now[n]
         if type(h) == "number" and (hp[n] or h > 0) then
@@ -340,11 +342,78 @@ local function throws()
     end
 end
 
+-- Walls: PolarisStageWallActor boxes (a 100 cm cube mesh, scaled and
+-- turned). Live walls have State 1 (unused placeholders sit at the origin
+-- with State 0). Stages with floor or balcony breaks keep one set per floor
+-- (FloorNo; Rebel Hangar: the upper floor's walls are FloorNo 0 from 6 m up,
+-- the ground floor's FloorNo 1). Searched once per fight; the floor under the
+-- player and the walls' State are checked twice a second, and the helper gets
+-- the boxes only when the set changes. It casts the rays itself
+-- (helper/walls.c), so a fight frame costs nothing extra here.
+Fight.walls_on = true
+local walls = nil          -- { {a=actor, cx, cy, hx, hy, c, s, zmin, zmax, floor, kind} }
+local walls_key, next_walls, my_z = nil, 0, nil
+
+local function find_walls()
+    walls = {}
+    for _, a in ipairs(FindAllOf("PolarisStageWallActor") or {}) do
+        local w = UI.valid(a) and safe(function()
+            local m = a.StaticMeshComponent
+            local mn, mx = {}, {}
+            m:GetLocalBounds(mn, mx)
+            local l, r, sc = m:K2_GetComponentLocation(), m:K2_GetComponentRotation(), m:K2_GetComponentScale()
+            local yaw = math.rad(r.Yaw)
+            local c, s = math.cos(yaw), math.sin(yaw)
+            local ox, oy = (mn.X + mx.X) / 2 * sc.X, (mn.Y + mx.Y) / 2 * sc.Y
+            local name = a:GetFName():ToString()
+            return { a = a, cx = l.X + ox * c - oy * s, cy = l.Y + ox * s + oy * c,
+                     hx = math.abs((mx.X - mn.X) / 2 * sc.X), hy = math.abs((mx.Y - mn.Y) / 2 * sc.Y),
+                     c = c, s = s, zmin = l.Z + mn.Z * sc.Z, zmax = l.Z + mx.Z * sc.Z,
+                     floor = a.FloorNo, kind = name:find("Balcony") and 2 or name:find("Break") and 1 or 0 }
+        end)
+        if w and w.hx > 1 and w.hy > 1 then walls[#walls + 1] = w end
+    end
+    Out.log("walls: " .. #walls .. " wall actors")
+end
+
+local function send_walls(t)
+    -- fighters stand at the origin for the first moments of a load
+    if t < next_walls or not my_z then return end
+    next_walls = t + 0.5
+    if not walls then find_walls() end
+    local live = {}
+    for _, w in ipairs(walls) do
+        if UI.valid(w.a) and safe(function() return w.a.State end) == 1 then live[#live + 1] = w end
+    end
+    -- the floor under the player: the set whose walls start highest but not
+    -- above the feet (a standing fighter's origin is ~1 m up)
+    local feet = (my_z or 0) - 100
+    local floor, top = nil, -1e9
+    for _, w in ipairs(live) do
+        if w.zmin <= feet + 80 and w.zmin > top then top, floor = w.zmin, w.floor end
+    end
+    local parts, n = {}, 0
+    if Fight.walls_on then
+        for _, w in ipairs(live) do
+            if w.floor == floor then
+                n = n + 1
+                parts[#parts + 1] = string.format("%.0f\t%.0f\t%.0f\t%.0f\t%.4f\t%.4f\t%d", w.cx, w.cy, w.hx, w.hy, w.c, w.s, w.kind)
+            end
+        end
+    end
+    local key = n .. ":" .. table.concat(parts, "|")
+    if key == walls_key then return end
+    walls_key = key
+    Out.send(n > 0 and ("W\t" .. n .. "\t" .. table.concat(parts, "\t")) or "W0")
+    Out.log("walls sent: " .. n .. " (floor " .. tostring(floor) .. ", feet " .. string.format("%.0f", feet) .. ")")
+end
+
 local function frame()
     local me, op = f[Fight.me], f[1 - Fight.me]
     local a = safe(function() return me:K2_GetActorLocation() end)
     local b = safe(function() return op:K2_GetActorLocation() end)
     if not a or not b then return end
+    if a.X ~= 0 or a.Y ~= 0 then my_z = a.Z end
     if not UI.valid(pc) then
         if os.clock() < next_pc then return end
         next_pc = os.clock() + 2
@@ -353,11 +422,10 @@ local function frame()
     local yaw = safe(function() return pc.PlayerCameraManager:GetCameraRotation().Yaw end) or 0
     local r = math.rad(yaw)
     local c, s = math.cos(r), math.sin(r)
-    if Fight.beacon then
-        Out.send(string.format("F\t%.1f\t%.1f\t%.1f\t%.1f\t%.4f\t%.4f", a.X, a.Y, b.X, b.Y, c, s))
-    else
-        Out.send("F0")
-    end
+    -- positions go every frame (walls need them too); the beacon's on/off is
+    -- a helper setting (F6)
+    Out.send(string.format("F\t%.1f\t%.1f\t%.1f\t%.1f\t%.4f\t%.4f", a.X, a.Y, b.X, b.Y, c, s))
+    send_walls(os.clock())
     ball_frame(a, c, s)
 end
 
@@ -388,6 +456,8 @@ local function stop()
         tips, tip_wait = nil, nil
         local M = package.loaded["menus"]; if M then M.practice_hud = nil end
         Out.send("F0"); Out.send("BL0")
+        walls, walls_key, next_walls, my_z = nil, nil, 0, nil
+        Out.send("W0")
     end
 end
 
@@ -470,11 +540,21 @@ function Fight.status()
             bi.h < 60 and "low" or bi.h < 180 and "chest high" or "high")
     end
     Out.say(text, true)
+    if Fight.walls_on then Out.send("WS") end    -- the helper adds the walls
 end
 
 function Fight.toggle_beacon()
     Fight.beacon = not Fight.beacon
+    Out.send("C\tbeacon\t" .. (Fight.beacon and 1 or 0))
     Out.say(Fight.beacon and "Opponent beacon on" or "Opponent beacon off", true)
+end
+
+-- Ctrl+F6: wall sounds
+function Fight.toggle_walls()
+    Fight.walls_on = not Fight.walls_on
+    walls_key, next_walls = nil, 0
+    Out.send("C\twalls\t" .. (Fight.walls_on and 1 or 0))
+    Out.say(Fight.walls_on and "Wall sounds on" or "Wall sounds off", true)
 end
 
 function Fight.toggle_throws()
