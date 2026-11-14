@@ -1,5 +1,5 @@
-﻿Tekken 8 Access 1.0 - screen reader and audio cues for Tekken 8
-===============================================================
+﻿Tekken 8 Access 1.0.1 - screen reader and audio cues for Tekken 8
+=================================================================
 
 Tested with Tekken 8 version 3.03.01 (Steam, November 2026).
 
@@ -68,6 +68,11 @@ Fights
   learns your ID from any offline fight where you picked a side (Practice
   is enough), so play one Practice match before going online. When you are
   on the right side online it says "You are on the right."
+- Ranked, Quick and Player Match: while you wait in practice, three rising
+  notes and "Opponent found." mean the game has found your opponent and is
+  loading the match (about 13 seconds before it starts). In the match the
+  mod says "Opponent player:" and their online name. If the opponent is
+  found while the practice pause menu is open, there is no sound.
 - Throw break sounds. In Tekken 8 a plain throw (1+3 or 2+4) breaks with
   1 or 2, either one; 1+2 does not break it. Command throws can need 1+2
   (or only 1, or only 2).
@@ -188,8 +193,15 @@ Shift+F2  attack sounds: opponent's, yours, both or off; Ctrl+F2 hear each one w
 F11  speech on / off
 Shift+F11  button names: Xbox, PlayStation or keyboard keys
 
-Updating from a test build
---------------------------
+New in 1.0.1
+------------
+- Fixed crashes when Ranked standby practice loaded a new stage (after an
+  online match, or after a network error).
+- "Opponent found." with a chime while waiting for an online match, and the
+  opponent's online name when the match starts.
+
+Updating from 1.0 or a test build
+---------------------------------
 Extract this zip over it. The mod folder is still Win64\Mods\TekkenA11y
 (the mod was called TekkenA11y before), so your settings stay.
 

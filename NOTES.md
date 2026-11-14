@@ -388,8 +388,12 @@ tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file 
   down and called UI.valid on them after the level freed them. Fix: drop_actors() on every HUD up/down
   change. Crash reports land in %LOCALAPPDATA%\TEKKEN 8\Saved\Crashes, not as UE4SS crash_*.dmp.
 - helper/main.c logs "game not responding; mod last wrote N ms ago" / "game responding again".
-- Match found in standby practice: no speech yet. The practice stage unloads ("walls: 0 boxes") about
-  15 s before the versus line. Polling visible widgets to find the notice stalled frames 0.6-0.9 s per
+- Match found: standby practice ends with no menu or dialog (23:00:22: walls cleared; versus line 13 s
+  later). fight.lua: online mode (Menus.main_row Ranked/Quick/Player Match) + HUD gone for 1 s + that fight
+  never showed two HUD player names + no pause menu or menu row in 2 s + no dialog in 20 s -> "T found"
+  (three rising notes) and "Opponent found.". In the match, "Opponent player: <name>." from the HUD online
+  IDs (read once a second). Not yet heard in game; a match found while the pause menu is open stays silent.
+- Polling visible widgets to find the notice stalled frames 0.6-0.9 s per
   poll (FindAllOf UserWidget + tree walk): never poll like that in standby or fights. A dialog read only
   "Yes" 3 s into one standby, then a network error dialog; whether that is the match-found prompt is unknown.
 - PolarisBlueprintLibrary GetCurrentBattleMode / GetApplicationMode / IsReplayMode error from Lua

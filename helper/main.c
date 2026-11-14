@@ -67,6 +67,11 @@ static void ui_sound(const char *name) {
         tone(f, f, 0.05f, 0.12f, 0, W_TRI);
     }
     else if (!strcmp(name, "drop")) tone(260, 180, 0.15f, 0.10f, 0, W_SOFT);
+    /* online: an opponent was found (standby practice ended): three rising notes */
+    else if (!strcmp(name, "found")) {
+        tone(392, 392, 0.09f, 0.14f, 0, W_SOFT); tone_at(0.10f, 523, 523, 0.09f, 0.14f, 0, W_SOFT);
+        tone_at(0.20f, 784, 784, 0.18f, 0.14f, 0, W_SOFT);
+    }
     else if (!strcmp(name, "clear")) {
         tone(523, 523, 0.10f, 0.14f, 0, W_SOFT); tone_at(0.10f, 659, 659, 0.10f, 0.14f, 0, W_SOFT);
         tone_at(0.20f, 784, 784, 0.10f, 0.14f, 0, W_SOFT); tone_at(0.30f, 1047, 1047, 0.25f, 0.14f, 0, W_SOFT);
@@ -195,7 +200,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     wcscat(logp, L"\\helper.log");
     InitializeCriticalSection(&g_loglock);
     g_log = _wfopen(logp, L"w");
-    log_line("Tekken 8 Access helper 1.0 started");
+    log_line("Tekken 8 Access helper 1.0.1 started");
 
     speech_init();
     audio_init();

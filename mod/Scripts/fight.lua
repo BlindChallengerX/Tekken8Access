@@ -492,6 +492,52 @@ local function round_on(t)
     return in_round
 end
 
+-- Online (2026-11-13). Ranked, Quick and Player Match wait for an opponent
+-- in a practice fight (standby). When one is found the game unloads that
+-- stage with no menu or dialog (23:00:22), then loads the match (versus line
+-- 13 s later). So: an online mode (the main menu row the player started),
+-- a fight HUD that goes and stays gone, a fight that never showed two player
+-- names (that is the real match), no pause menu in the last 2 s and no dialog
+-- in the last 20 s (a network error ends standby with a dialog) = opponent
+-- found. The other player's name is read off the HUD once the match is up.
+local ONLINE_MODES = { ["Ranked Match"] = true, ["Quick Match"] = true, ["Player Match"] = true }
+local fight_online, next_names, said_opponent, menu_seen_t, found_at = false, 0, nil, -100, nil
+
+local function online_mode()
+    local M = package.loaded["menus"]
+    return M ~= nil and ONLINE_MODES[M.main_row or ""] == true
+end
+
+local function check_names(t)
+    if t < next_names then return end
+    next_names = t + 1
+    local l, r = hud_names()
+    if not (l and r) or l == "" or r == "" or l == r then return end
+    fight_online = true
+    local other = (l == own_name and r) or (r == own_name and l) or nil
+    if other and other ~= said_opponent then
+        said_opponent = other
+        Out.queue("Opponent player: " .. other .. ".")
+    end
+end
+
+local function standby_left(t)
+    local M = package.loaded["menus"]
+    if fight_online or not online_mode() or t - menu_seen_t < 2 then return end
+    -- any menu row or dialog just before (Return to Standby on the result
+    -- screen, leaving practice through its menu, a network error)
+    if M and (t - (M.last_menu_t or -100) < 2 or t - (M.dialog_t or -100) < 20) then return end
+    found_at = t + 1.0          -- the HUD must stay gone (a long frame is not a match)
+end
+
+local function found_check(t)
+    if not found_at or t < found_at then return end
+    found_at, said_opponent = nil, nil
+    Out.send("T\tfound")
+    Out.say("Opponent found.", true)
+    Out.log("match found: standby practice ended")
+end
+
 local hud_was_up = false
 local function forget_widgets()
     menus, hud_w = {}, nil
@@ -502,8 +548,12 @@ end
 function Fight.tick()
     local t = os.clock()
     local up = hud_up()
-    if up ~= hud_was_up then hud_was_up = up; forget_widgets(); drop_actors(); story_mode, next_round_check = nil, 0 end
-    if not up then stop() return end
+    if up ~= hud_was_up then
+        if up then found_at = nil elseif active then standby_left(t) end
+        hud_was_up = up; forget_widgets(); drop_actors(); story_mode, next_round_check = nil, 0
+        fight_online, next_names = false, 0
+    end
+    if not up then found_check(t); stop() return end
     if refind then refind = false; f[0], f[1], next_find = nil, nil, 0 end
     if not ok_fighters() then
         stop()
@@ -516,6 +566,8 @@ function Fight.tick()
         next_menu_check = t + 0.3
         menu_open = any_menu()
     end
+    if menu_open then menu_seen_t = t end
+    check_names(t)
     if not active then
         active = true
         ball, ball_mode, ball_tries, next_ball = nil, false, 0, t + 1

@@ -663,7 +663,9 @@ local function read_dialog(w)
     Out.say(t, true)
     if btn and btn ~= t then Out.queue(btn) end
 end
+Menus.dialog_t = -100            -- last dialog opening (fight.lua: a network error is not a match found)
 local function on_dialog(ctx)
+    Menus.dialog_t = os.clock()
     local w = self_of(ctx)
     if w then read_dialog(w) end
 end
