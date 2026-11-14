@@ -447,6 +447,18 @@ local function attack_set(cmd)
     if cmd ~= atk_sent then atk_sent = cmd; Out.send(cmd) end
 end
 
+-- Actors die with their level. UI.valid on a freed actor is not safe: UE4SS
+-- reads the object's own memory, and once the game has released it that is
+-- an access violation. Two crashes on 2026-11-13 (both while Ranked standby
+-- practice loaded a new stage after the previous fight's HUD went down)
+-- were the old fighters / PlayerController being checked. So every actor
+-- kept for a fight is dropped the moment that fight's HUD goes, and looked up
+-- again for the next one.
+local function drop_actors()
+    f[0], f[1], pc, ball = nil, nil, nil, nil
+    next_find, next_pc = 0, 0
+end
+
 local function stop()
     attack_set("A0")
     if active then
@@ -490,7 +502,7 @@ end
 function Fight.tick()
     local t = os.clock()
     local up = hud_up()
-    if up ~= hud_was_up then hud_was_up = up; forget_widgets(); story_mode, next_round_check = nil, 0 end
+    if up ~= hud_was_up then hud_was_up = up; forget_widgets(); drop_actors(); story_mode, next_round_check = nil, 0 end
     if not up then stop() return end
     if refind then refind = false; f[0], f[1], next_find = nil, nil, 0 end
     if not ok_fighters() then

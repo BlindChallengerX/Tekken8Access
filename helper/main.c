@@ -126,6 +126,8 @@ static void handle(char *line) {
     else log_line("unknown command %s", line);
 }
 
+static volatile DWORD g_last_cmd;       /* GetTickCount of the last line from the mod */
+
 static DWORD WINAPI pipe_thread(LPVOID unused) {
     (void)unused;
     static char buf[65536];
@@ -140,6 +142,7 @@ static DWORD WINAPI pipe_thread(LPVOID unused) {
             DWORD got = 0;
             if (!ReadFile(h, buf + have, (DWORD)(sizeof buf - 1 - have), &got, NULL) || !got) break;
             have += got; buf[have] = 0;
+            g_last_cmd = GetTickCount();
             char *start = buf, *nl;
             while ((nl = memchr(start, '\n', have - (start - buf)))) { *nl = 0; handle(start); start = nl + 1; }
             have -= start - buf;
@@ -161,6 +164,20 @@ static DWORD find_game(void) {
     } while (Process32NextW(snap, &pe));
     CloseHandle(snap);
     return pid;
+}
+
+/* the game's visible top-level window (it swaps windows while starting) */
+static HWND s_found; static DWORD s_find_pid;
+static BOOL CALLBACK find_win(HWND h, LPARAM unused) {
+    (void)unused;
+    DWORD pid = 0; GetWindowThreadProcessId(h, &pid);
+    if (pid == s_find_pid && IsWindowVisible(h) && !GetWindow(h, GW_OWNER)) { s_found = h; return FALSE; }
+    return TRUE;
+}
+static HWND game_window(DWORD pid) {
+    s_found = NULL; s_find_pid = pid;
+    EnumWindows(find_win, 0);
+    return s_found;
 }
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
@@ -193,10 +210,26 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
         if (!game) Sleep(500);
     }
     if (!game) { log_line("game not found, exiting"); return 0; }
+    /* freeze watch (2026-11-13: the game froze in standby practice with no
+       report): log when the game window stops and starts answering, and how
+       long before that the mod last wrote to the pipe, to tell a game freeze
+       from the mod stalling */
+    DWORD next_hang_check = 0; int hung = 0;
     for (;;) {
         if (WaitForSingleObject(game, 20) == WAIT_OBJECT_0) break;
         beacon_tick();
         walls_tick();
+        DWORD now = GetTickCount();
+        if (now >= next_hang_check) {
+            next_hang_check = now + 1000;
+            HWND w = game_window(GetProcessId(game));
+            int h = w && IsHungAppWindow(w);
+            if (h != hung) {
+                hung = h;
+                if (h) log_line("game not responding; mod last wrote %lu ms ago", now - g_last_cmd);
+                else log_line("game responding again");
+            }
+        }
     }
     log_line("game exited");
     return 0;

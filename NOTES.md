@@ -379,3 +379,20 @@ tick), practice Enter/Esc column change 250-480 ms. Old 0.6: 150 ms poll + file 
   so result_in hands it to Fight.saw_menu (beacon muted).
 - Rounds lost on time say nothing (health 3% -> 100%, no K.O.); a real K.O. is announced. Not done: a
   "time out" line, side select's initial side.
+
+## Ranked standby crashes and match found (2026-11-13)
+
+- Two crashes (game\Saved\Crashes UECC-* reports, EXCEPTION_ACCESS_VIOLATION inside UE4SS, reading
+  object+0xC) while Ranked standby practice loaded a new stage: after an online match ("Return to
+  Standby") and after a network error. Cause: fight.lua kept f[0]/f[1]/pc/ball across the HUD going
+  down and called UI.valid on them after the level freed them. Fix: drop_actors() on every HUD up/down
+  change. Crash reports land in %LOCALAPPDATA%\TEKKEN 8\Saved\Crashes, not as UE4SS crash_*.dmp.
+- helper/main.c logs "game not responding; mod last wrote N ms ago" / "game responding again".
+- Match found in standby practice: no speech yet. The practice stage unloads ("walls: 0 boxes") about
+  15 s before the versus line. Polling visible widgets to find the notice stalled frames 0.6-0.9 s per
+  poll (FindAllOf UserWidget + tree walk): never poll like that in standby or fights. A dialog read only
+  "Yes" 3 s into one standby, then a network error dialog; whether that is the match-found prompt is unknown.
+- PolarisBlueprintLibrary GetCurrentBattleMode / GetApplicationMode / IsReplayMode error from Lua
+  (UE4SS 3.0.1, likely enum returns); IsSwitchedToPracticeDeku works.
+- Attack sounds: standby practice has no battle object ("no battle object found" every 3 s, harmless);
+  online fights find it, sometimes ~20 s in.
